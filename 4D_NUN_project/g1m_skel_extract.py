@@ -1,4 +1,4 @@
-# Skeleton data extractor, still broken.
+# Skeleton data extractor for G1M files.
 # Based entirely off the work of Joschuka (fmt_g1m / Project G1M), huge thank you to Joschuka!
 #
 # Steps:
@@ -52,6 +52,37 @@ def parseG1MS(g1ms_chunk,e):
         g1ms_section["boneList"] = boneList
     return(g1ms_section)
 
+def combine_skeleton(base_skel_data, model_skel_data):
+    if model_skel_data['jointIndicesCount'] == len(base_skel_data['boneIDList']):
+        return(base_skel_data)
+    else: # Everything below here is untested! (The model I have access to does not have extra bones)
+        combined_data = base_skel_data
+        externalOffset = len(combined_data['boneIDList'])
+        externalOffsetList = len(combined_data['boneList'])
+        for i in range(model_skel_data['jointIndicesCount']):
+            id = model_skel_data['boneIDList'][i]['id']
+            if i >= externalOffset or i ==0:
+                combined_data['boneIDList'].append(id + externalOffsetList +1)
+            if (id != 0xFFFF and i != 0):
+                combined_data['boneToBoneID'][id + externalOffsetList] = i
+        for i in range(model_skel_data["jointCount"]):
+            bone = model_skel_data['boneList'][i]
+            if bone['parentID'] < 0:
+                bone['i'] = i + externalOffsetList
+                bone['bone_id'] = 'Clothbone_' + str(i)
+                bone['parentID'] = bone['parentID'] & 0xFFFF
+                parent_bone = [x for x in combined_data['boneList'] if x['i'] == bone['parentID']][0]
+                bone['boneMatrixTransform'] = (numpy.array(bone['boneMatrixTransform']) * numpy.array(parent_bone['boneMatrixTransform'])).tolist()
+                combined_data['boneList'].append(bone)
+            else:
+                bone['i'] = i + externalOffsetList
+                bone['bone_id'] = 'Clothbone_' + str(i)
+                bone['parentID'] = bone['parentID'] + externalOffsetList
+                parent_bone = [x for x in combined_data['boneList'] if x['i'] == bone['parentID']][0]
+                bone['boneMatrixTransform'] = (numpy.array(bone['boneMatrixTransform']) * numpy.array(parent_bone['boneMatrixTransform'])).tolist()
+                combined_data['boneList'].append(bone)
+        return(combined_data)
+
 # The argument passed (g1m_name) is actually the folder name
 def parseG1M(g1m_name):
     with open(g1m_name + '.g1m', "rb") as f:
@@ -97,8 +128,10 @@ if __name__ == "__main__":
         parser.add_argument('-o', '--overwrite', help="Overwrite existing files", action="store_true")
         parser.add_argument('g1m_filename', help="Name of g1m file to extract G1MS data (required).")
         args = parser.parse_args()
-        #if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
-            #parseG1M(args.g1m_filename[:-4])
+        if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
+            model_skel_data = parseG1M(args.g1m_filename[:-4])
+            with open(args.g1m_filename+"_skel.json", "wb") as f:
+                f.write(json.dumps(model_skel_data, indent=4).encode("utf-8"))
     else:
         # When run without command line arguments, it will attempt to obtain skeleton data from exported g1m
         modeldirs = [x for x in glob.glob('*_MODEL_*') if os.path.isdir(x)]
@@ -108,7 +141,6 @@ if __name__ == "__main__":
                 # Need to add logic here to detect if skeleton is external
                 base_skel_data = parseG1M("_".join(models[i].split("_")[:-1]))
                 model_skel_data = parseG1M(models[i])
-                with open(models[i]+"/base_skel_data.json", "wb") as f:
-                    f.write(json.dumps(base_skel_data, indent=4).encode("utf-8"))
+                skel_data = combine_skeleton(base_skel_data, model_skel_data)
                 with open(models[i]+"/skel_data.json", "wb") as f:
-                    f.write(json.dumps(model_skel_data, indent=4).encode("utf-8"))
+                    f.write(json.dumps(skel_data, indent=4).encode("utf-8"))
