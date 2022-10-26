@@ -139,7 +139,7 @@ if __name__ == "__main__":
         if len(models) > 0:
             for i in range(len(models)):
                 # Need to add logic here to detect if skeleton is external
-                base_skel_data = parseG1M("_".join(models[i].split("_")[:-1]))
+                base_skel_data = parseG1M(models[i].split("_MODEL_")[0]+'_MODEL')
                 model_skel_data = parseG1M(models[i])
                 skel_data = combine_skeleton(base_skel_data, model_skel_data)
                 with open(models[i]+"/skel_data.json", "wb") as f:
