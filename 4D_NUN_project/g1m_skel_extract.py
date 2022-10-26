@@ -21,13 +21,12 @@ def parseG1MS(g1ms_chunk,e):
     with io.BytesIO(g1ms_chunk) as f:
         g1ms_section["magic"] = f.read(4).decode("utf-8")
         g1ms_section["version"], g1ms_section["size"], = struct.unpack(e+"II", f.read(8))
-        jointDataOffset, conditionNumber = struct.unpack(e+"IH", f.read(6))
-        f.seek(2,1)
-        jointCount, jointIndicesCount, layer = struct.unpack(e+"HHH", f.read(6))
+        jointDataOffset, unknown = struct.unpack(e+"II", f.read(8))
+        g1ms_section["jointCount"], g1ms_section["jointIndicesCount"], g1ms_section["layer"] = struct.unpack(e+"HHH", f.read(6))
         f.seek(2,1)
         boneIDList = []
         boneToBoneID = {}
-        for i in range(jointIndicesCount):
+        for i in range(g1ms_section["jointIndicesCount"]):
             id, = struct.unpack(e+"H", f.read(2))
             boneIDList.append(id)
             if (id != 0xFFFF):
@@ -37,20 +36,17 @@ def parseG1MS(g1ms_chunk,e):
         f.seek(jointDataOffset,0)
         localBoneMatrices = []
         boneList = []
-        for i in range(jointCount):
-            scale = struct.unpack(e+"3f",f.read(12))
-            parentID, = struct.unpack(e+"i", f.read(4))
-            quaternionRotation = list(struct.unpack(e+"4f",f.read(16)))
-            position = list(struct.unpack(e+"3f",f.read(12)))
-            wCoord, = struct.unpack(e+"f", f.read(4))
-            boneMatrixTransform = numpy.r_[numpy.linalg.inv(quaternionto3x3matrix(quaternionRotation)), \
-            [position]].tolist()
-            localBoneMatrices.append(boneMatrixTransform)
+        for i in range(g1ms_section["jointCount"]):
             bone = {}
             bone['i'] = i
             bone['bone_id'] = 'bone_' + str(boneToBoneID[i])
-            bone['matrix'] = boneMatrixTransform
-            bone['parentID'] = parentID
+            bone['scale'] = struct.unpack(e+"3f",f.read(12))
+            bone['parentID'], = struct.unpack(e+"i", f.read(4))
+            bone['rotation_q'] = list(struct.unpack(e+"4f",f.read(16))) # x,y,z,w
+            bone['position'] = list(struct.unpack(e+"4f",f.read(16))) # x,y,z,w
+            bone['boneMatrixTransform'] = numpy.r_[numpy.linalg.inv(quaternionto3x3matrix(bone['rotation_q'])), \
+            [bone['position'][0:3]]].tolist()
+            localBoneMatrices.append(bone['boneMatrixTransform'])
             boneList.append(bone)
         g1ms_section["localBoneMatrices"] = localBoneMatrices
         g1ms_section["boneList"] = boneList
@@ -104,11 +100,12 @@ if __name__ == "__main__":
         #if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
             #parseG1M(args.g1m_filename[:-4])
     else:
-        # When run without command line arguments, it will attempt to obtain NUN data from exported g1m
+        # When run without command line arguments, it will attempt to obtain skeleton data from exported g1m
         modeldirs = [x for x in glob.glob('*_MODEL_*') if os.path.isdir(x)]
         models = [value for value in modeldirs if value in [x[:-4] for x in glob.glob('*_MODEL_*.g1m')]]
         if len(models) > 0:
             for i in range(len(models)):
+                # Need to add logic here to detect if skeleton is external
                 base_skel_data = parseG1M("_".join(models[i].split("_")[:-1]))
                 model_skel_data = parseG1M(models[i])
                 with open(models[i]+"/base_skel_data.json", "wb") as f:
