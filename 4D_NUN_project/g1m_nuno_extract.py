@@ -8,11 +8,11 @@
 
 import glob, os, io, sys, struct, json
 
-def parseNUNO1(chunkVersion, f,e):
+def parseNUNO1(chunkVersion, f, e):
     nuno1_block = {}
-    nuno1_block['name'] = "nuno"
+    nuno1_block['name'] = "nuno1"
     nuno1_block['parentBoneID'] = None
-    # Not sure if it should just be nuno1_block['parentBoneID'], = struct.unpack("<I",f.read(4))
+    # Not sure if it should just be nuno1_block['parentBoneID'], = struct.unpack(e+"I",f.read(4))
     # instead of the next 2 lines
     a,b = struct.unpack("<HH", f.read(4))
     nuno1_block['parentBoneID'] = a if e == '<' else b
@@ -41,11 +41,11 @@ def parseNUNO1(chunkVersion, f,e):
     f.seek(4 * skip4,1)
     return(nuno1_block)
 
-def parseNUNO2(chunkVersion, f,e):
+def parseNUNO2(chunkVersion, f, e):
     nuno2_block = {}
-    nuno2_block['name'] = "nuno"
+    nuno2_block['name'] = "nuno2"
     nuno2_block['parentBoneID'] = None
-    # Not sure if it should just be nuno2_block['parentBoneID'], = struct.unpack("<I",f.read(4))
+    # Not sure if it should just be nuno2_block['parentBoneID'], = struct.unpack(e+"I",f.read(4))
     # instead of the next 2 lines
     a,b = struct.unpack("<HH", f.read(4))
     nuno2_block['parentBoneID'] = a if e == '<' else b
@@ -54,9 +54,9 @@ def parseNUNO2(chunkVersion, f,e):
     f.read(0x08)
     return(nuno2_block)
 
-def parseNUNO3(chunkVersion, f,e):
+def parseNUNO3(chunkVersion, f, e):
     nuno3_block = {}
-    nuno3_block['name'] = "nuno"
+    nuno3_block['name'] = "nuno3"
     nuno3_block['parentBoneID'] = None
     # Not sure if it should just be nuno3_block['parentBoneID'], = struct.unpack(e+"I",f.read(4))
     # instead of the next 2 lines
@@ -94,9 +94,9 @@ def parseNUNO3(chunkVersion, f,e):
     f.seek(8 * skip4,1)
     return(nuno3_block)
 
-def parseNUNV1(chunkVersion, f,e):
+def parseNUNV1(chunkVersion, f, e):
     nunv1_block = {}
-    nunv1_block['name'] = "nunv"
+    nunv1_block['name'] = "nunv1"
     nunv1_block['parentBoneID'] = None
     # Not sure if it should just be nunv1_block['parentBoneID'], = struct.unpack(e+"I",f.read(4))
     # instead of the next 2 lines
@@ -121,9 +121,9 @@ def parseNUNV1(chunkVersion, f,e):
     f.seek(4 * skip1,1)
     return(nunv1_block)
 
-def parseNUNS1(chunkVersion, f,e):
+def parseNUNS1(chunkVersion, f, e):
     nuns1_block = {}
-    nuns1_block['name'] = "nuns"
+    nuns1_block['name'] = "nuns1"
     nuns1_block['parentBoneID'] = None
     # Not sure if it should just be nuns1_block['parentBoneID'], = struct.unpack(e+"I",f.read(4))
     # instead of the next 2 lines
@@ -154,7 +154,7 @@ def parseNUNS1(chunkVersion, f,e):
     f.read(0xC)
     return(nuns1_block)
 
-def parseNUNO(nuno_chunk,e):
+def parseNUNO(nuno_chunk, e):
     nuno_section = {}
     with io.BytesIO(nuno_chunk) as f:
         nuno_section["magic"] = f.read(4).decode("utf-8")
@@ -177,7 +177,7 @@ def parseNUNO(nuno_chunk,e):
             nuno_section["chunks"].append(chunk)
     return(nuno_section)
 
-def parseNUNV(nuno_chunk,e):
+def parseNUNV(nuno_chunk, e):
     nunv_section = {}
     with io.BytesIO(nuno_chunk) as f:
         nunv_section["magic"] = f.read(4).decode("utf-8")
@@ -215,8 +215,18 @@ def parseNUNS(nuno_chunk, e):
             nuns_section["chunks"].append(chunk)
     return(nuns_section)
 
+# This combines NUNO/NUNV/NUNS struct into a single stack
+def stack_nun(nun_data):
+    nun_stack = []
+    for key in nun_data:
+        for i in range(len(nun_data[key]['chunks'])):
+            for j in range(len(nun_data[key]['chunks'][i]['subchunks'])):
+                nun_stack.append(nun_data[key]['chunks'][i]['subchunks'][j])
+    return nun_stack
+
 # The argument passed (g1m_name) is actually the folder name
 def parseG1M(g1m_name):
+    nun_data = {}
     with open(g1m_name + '.g1m', "rb") as f:
         file = {}
         file["file_magic"], = struct.unpack(">I", f.read(4))
@@ -233,7 +243,6 @@ def parseG1M(g1m_name):
         chunks["starting_offset"], chunks["reserved"], chunks["count"] = struct.unpack(e+"III", f.read(12))
         chunks["chunks"] = []
         f.seek(chunks["starting_offset"])
-        nun_data = {}
         for i in range(chunks["count"]):
             chunk = {}
             chunk["start_offset"] = f.tell()
@@ -253,15 +262,7 @@ def parseG1M(g1m_name):
             else:
                 f.seek(chunk["start_offset"] + chunk["size"],0) # Move to next chunk
         file["chunks"] = chunks
-
-        with open(g1m_name+"_contents.json", "wb") as f:
-            f.write(json.dumps(file, indent=4).encode("utf-8"))
-
-        if not os.path.exists(g1m_name): 
-            os.mkdir(g1m_name)
-
-        with open(g1m_name+"/nun_data.json", "wb") as f:
-            f.write(json.dumps(nun_data, indent=4).encode("utf-8"))
+    return(nun_data)
 
 if __name__ == "__main__":
     # Set current directory
@@ -273,11 +274,18 @@ if __name__ == "__main__":
         parser.add_argument('g1m_filename', help="Name of g1m file to extract NUN data (required).")
         args = parser.parse_args()
         if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
-            parseG1M(args.g1m_filename[:-4])
+            nun_data = stack_nun(parseG1M(args.g1m_filename[:-4]))
+            with open(args.g1m_filename+"_nun.json", "wb") as f:
+                f.write(json.dumps(model_skel_data, indent=4).encode("utf-8"))
     else:
         # When run without command line arguments, it will attempt to obtain NUN data from exported g1m
         modeldirs = [x for x in glob.glob('*_MODEL_*') if os.path.isdir(x)]
         models = [value for value in modeldirs if value in [x[:-4] for x in glob.glob('*_MODEL_*.g1m')]]
         if len(models) > 0:
             for i in range(len(models)):
-                parseG1M(models[i])
+                # As written, it auto-stacks all the data into a single list (remove stacking for debug)
+                # Need to add logic here to detect if skeleton is external
+                nun_data = stack_nun(parseG1M(models[i].split("_MODEL_")[0]+'_MODEL'))
+                nun_data.extend(stack_nun(parseG1M(models[i])))
+                with open(models[i]+"/nun_data.json", "wb") as f:
+                    f.write(json.dumps(nun_data, indent=4).encode("utf-8"))
