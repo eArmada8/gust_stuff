@@ -67,7 +67,7 @@ def calc_abs_rotation_position(bone, parent_bone):
     q1 = Quaternion(bone['q_wxyz'])
     qp = Quaternion(parent_bone['abs_q'])
     bone["abs_q"] = list(q1 * qp)
-    bone["abs_p"] = rotated_p = (numpy.array(qp.rotate(bone['pos_xyz'])) + parent_bone['abs_p']).tolist()
+    bone["abs_p"] = (numpy.array(qp.rotate(bone['pos_xyz'])) + parent_bone['abs_p']).tolist()
     bone["abs_tm"] = Quaternion(bone["abs_q"]).transformation_matrix.tolist()
     bone["abs_tm"] = numpy.delete(bone["abs_tm"], -1, 1)
     bone["abs_tm"][3] = bone["abs_p"]
