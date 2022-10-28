@@ -1,7 +1,7 @@
 # Skeleton data extractor for G1M files.
 # Based entirely off the work of Joschuka (fmt_g1m / Project G1M), huge thank you to Joschuka!
 #
-# Transforming rotation and position of bones from reltive positions to absolute posistions seems to get
+# Transforming rotation and position of bones from relative to absolute rotataion / position seems to get
 # slightly different results than Noesis libraries; I don't have access to original source code but it
 # makes sense to me to use quaternions exclusively rather than converting everything to matrices since
 # G1M stores the skeletons using quaternions.  Hopefully this is more accurate, rather than less.  Final 
