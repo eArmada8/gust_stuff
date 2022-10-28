@@ -165,6 +165,7 @@ def read_vb(vb_filename, fmt_struct):
         for i in range(len(fmt_struct["elements"])):
             element = {}
             element["SemanticName"] = fmt_struct["elements"][i]["SemanticName"]
+            element["SemanticIndex"] = fmt_struct["elements"][i]["SemanticIndex"]
             element_buffer = []
             for j in range(num_vertex):
                 f.seek(j * int(fmt_struct["stride"]) + int(fmt_struct["elements"][i]["AlignedByteOffset"]),0)
