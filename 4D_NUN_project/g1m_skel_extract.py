@@ -2,8 +2,8 @@
 # Based entirely off the work of Joschuka (fmt_g1m / Project G1M), huge thank you to Joschuka!
 #
 # Transforming rotation and position of bones from relative to absolute rotataion / position seems to get
-# slightly different results than Noesis libraries; I don't have access to original source code but it
-# makes sense to me to use quaternions exclusively rather than converting everything to matrices since
+# slightly different results than fmt_g1m using Noesis libraries; I don't have access to Noesis source code
+# but it makes sense to me to use quaternions exclusively rather than converting everything to matrices since
 # G1M stores the skeletons using quaternions.  Hopefully this is more accurate, rather than less.  Final 
 # transformation matrices are included in 4x3 format for convenience.
 #
@@ -47,7 +47,7 @@ def parseG1MS(g1ms_chunk,e):
             bone['scale'] = struct.unpack(e+"3f",f.read(12))
             bone['parentID'], = struct.unpack(e+"i", f.read(4))
             bone['rotation_q'] = list(struct.unpack(e+"4f",f.read(16))) # x,y,z,w
-            bone['q_wxyz'] = bone['rotation_q'][-1:]+bone['rotation_q'][:-1] # x,y,z,w
+            bone['q_wxyz'] = bone['rotation_q'][-1:]+bone['rotation_q'][:-1] # w,x,y,z
             quat = Quaternion(bone['q_wxyz']) # w,x,y,z
             bone['position'] = list(struct.unpack(e+"4f",f.read(16))) # x,y,z,w
             bone['pos_xyz'] = bone['position'][0:3]
