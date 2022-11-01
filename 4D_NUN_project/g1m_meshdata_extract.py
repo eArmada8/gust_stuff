@@ -244,7 +244,7 @@ if __name__ == "__main__":
             with open(args.g1m_filename+"_mesh_metadata.json", "wb") as f:
                 f.write(json.dumps(model_mesh_metadata, indent=4).encode("utf-8"))
     else:
-        # When run without command line arguments, it will attempt to obtain skeleton data from exported g1m
+        # When run without command line arguments, it will attempt to obtain data from all models (skipping skeleton file)
         modeldirs = [x for x in glob.glob('*_MODEL_*') if os.path.isdir(x)]
         models = [value for value in modeldirs if value in [x[:-4] for x in glob.glob('*_MODEL_*.g1m')]]
         if len(models) > 0:
