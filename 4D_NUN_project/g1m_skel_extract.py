@@ -1,5 +1,6 @@
 # Skeleton data extractor for G1M files.
-# Based entirely off the work of Joschuka (fmt_g1m / Project G1M), huge thank you to Joschuka!
+# Based primarily off the work of GitHub/Joschuka, huge thank you!  Also many thanks to eterniti for sharing
+# code with me to reference.
 #
 # Transforming rotation and position of bones from relative to absolute rotataion / position seems to get
 # slightly different results than fmt_g1m using Noesis libraries; I don't have access to Noesis source code
