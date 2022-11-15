@@ -20,6 +20,27 @@
 import glob, os, io, sys, struct, json, numpy
 from pyquaternion import Quaternion
 
+# From GitHub/uyjulian's ED9 MDL parser, thank you
+def read_pascal_string(f):
+    sz = int.from_bytes(f.read(1), byteorder="little")
+    return f.read(sz)
+
+def binary_oid_to_dict(oid_file):
+    with open(oid_file, 'rb') as f:
+        f_length = f.seek(0,io.SEEK_END)
+        f.seek(0)
+        headers = []
+        bones = {}
+        while f.tell() < f_length:
+            bone_string = read_pascal_string(f).decode("ASCII")
+            if len(bone_string.split(',')) > 1:
+                bones[int(bone_string.split(',')[0])] = bone_string.split(',')[1]
+            elif len(bone_string.split('ObjectID:')) > 1:
+                oid_file = bone_string.split('ObjectID:')[1]
+            else:
+                headers.append(bone_string)
+    return({'oid_file': oid_file, 'headers': headers, 'bones': bones})
+
 def parseG1MS(g1ms_chunk,e):
     g1ms_section = {}
     with io.BytesIO(g1ms_chunk) as f:
@@ -88,6 +109,14 @@ def calc_abs_skeleton(base_skel_data):
             base_skel_data['boneList'][bone]['abs_p'] = base_skel_data['boneList'][bone]['pos_xyz']
             base_skel_data['boneList'][bone]['abs_tm'] = base_skel_data['boneList'][bone]['boneMatrixTransform']
     return(base_skel_data)
+
+def name_bones(skel_data, oid):
+    for bone in range(len(skel_data['boneList'])):
+        if skel_data['boneToBoneID'][skel_data['boneList'][bone]['i']] in oid['bones'].keys():
+            skel_data['boneList'][bone]['name'] = oid['bones'][skel_data['boneToBoneID'][skel_data['boneList'][bone]['i']]]
+        else:
+            skel_data['boneList'][bone]['name'] = skel_data['boneList'][bone]['bone_id']
+    return(skel_data)
 
 def combine_skeleton(base_skel_data, model_skel_data):
     if model_skel_data['jointIndicesCount'] == len(base_skel_data['boneIDList']):
@@ -170,8 +199,15 @@ if __name__ == "__main__":
         if len(models) > 0:
             for i in range(len(models)):
                 # Need to add logic here to detect if skeleton is external
-                base_skel_data = calc_abs_skeleton(parseG1M(models[i].split("_MODEL_")[0]+'_MODEL'))
+                base_model = models[i].split("_MODEL_")[0]+'_MODEL'
+                base_skel_data = calc_abs_skeleton(parseG1M(base_model))
+                if os.path.exists(base_model+'Oid.bin'):
+                    base_skel_oid = binary_oid_to_dict(base_model+'Oid.bin')
+                    base_skel_data = name_bones(base_skel_data, base_skel_oid)
                 model_skel_data = parseG1M(models[i])
+                if os.path.exists(models[i]+'Oid.bin'):
+                    model_skel_oid = binary_oid_to_dict(models[i]+'Oid.bin')
+                    model_skel_data = name_bones(model_skel_oid, model_skel_oid)
                 skel_data = combine_skeleton(base_skel_data, model_skel_data)
                 with open(models[i]+"/skel_data.json", "wb") as f:
                     f.write(json.dumps(skel_data, indent=4).encode("utf-8"))
