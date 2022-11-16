@@ -3,7 +3,7 @@
 #
 # GitHub eArmada8/gust_stuff
 
-import re, struct, json
+import io, re, struct, json
 
 # Currently only simple formats (8-, 16-, and 32-bit) are supported.  Floats must be 32-bit.
 # Attempting to read an unsupported format will return a raw bytes object.
@@ -121,11 +121,11 @@ def write_fmt(fmt_struct, fmt_filename):
         f.write(output)
     return
 
-def read_ib(ib_filename, fmt_struct):
+def read_ib_stream(ib_stream, fmt_struct):
     ib_data = []
     # Cheating a bit here, since all index buffers I've seen are single numbers, but fmt doesn't have a stride for IB
     ib_stride = int(int(re.findall("[0-9]+", fmt_struct["format"])[0])/8)
-    with open(ib_filename, 'rb') as f:
+    with io.BytesIO(ib_stream) as f:
         length = f.seek(0,2)
         f.seek(0)
         vertex_num = 0
@@ -138,6 +138,11 @@ def read_ib(ib_filename, fmt_struct):
                 triangle = []
     return(ib_data)
 
+def read_ib(ib_filename, fmt_struct):
+    with open(ib_filename, 'rb') as f:
+        ib_stream = f.read()
+    return(read_ib_stream(ib_stream, fmt_struct))
+
 def write_ib(ib_data, ib_filename, fmt_struct):
     # See above about cheating
     ib_stride = int(int(re.findall("[0-9]+", fmt_struct["format"])[0])/8)
@@ -147,9 +152,9 @@ def write_ib(ib_data, ib_filename, fmt_struct):
                 pack_dxgi_vector(f, [ib_data[i][j]], ib_stride, fmt_struct["format"])
     return
 
-def read_vb(vb_filename, fmt_struct):
+def read_vb_stream(vb_stream, fmt_struct):
     vb_data = []
-    with open(vb_filename, 'rb') as f:
+    with io.BytesIO(vb_stream) as f:
         length = f.seek(0,2)
         f.seek(0)
         num_vertex = int(length / int(fmt_struct["stride"]))
@@ -173,6 +178,11 @@ def read_vb(vb_filename, fmt_struct):
             element["Buffer"] = element_buffer
             vb_data.append(element)
     return(vb_data)
+
+def read_vb(vb_filename, fmt_struct):
+    with open(vb_filename, 'rb') as f:
+        vb_stream = f.read()
+    return(read_vb_stream(vb_stream, fmt_struct))
 
 def write_vb(vb_data, vb_filename, fmt_struct):
     with open(vb_filename, 'wb') as f:
