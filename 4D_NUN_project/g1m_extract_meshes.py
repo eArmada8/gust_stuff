@@ -239,6 +239,27 @@ def generate_vb(index, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
             f.seek(vb['data'][index]['offset'])
             return(read_vb_stream(f.read(int(vb['data'][index]['stride']*vb['data'][index]['count'])), fmts[index], e))
 
+def cull_vb(submesh):
+    active_indices = list({x for l in submesh['ib'] for x in l})
+    new_vb = []
+    for i in range(len(submesh['vb'])):
+        new_vb.append({'SemanticName': submesh['vb'][i]['SemanticName'],\
+            'SemanticIndex': submesh['vb'][i]['SemanticIndex'], 'Buffer': []})
+    new_indices = {}
+    num_buffers = len(submesh['vb'])
+    current_vertex = 0
+    for i in range(len(submesh['vb'][0]['Buffer'])):
+        if i in active_indices:
+            for j in range(len(submesh['vb'])):
+                new_vb[j]['Buffer'].append(submesh['vb'][j]['Buffer'][i])
+            new_indices[i] = current_vertex
+            current_vertex += 1
+    submesh['vb'] = new_vb
+    for i in range(len(submesh['ib'])):
+        for j in range(len(submesh['ib'][i])):
+            submesh['ib'][i][j] = new_indices[submesh['ib'][i][j]]
+    return(submesh)
+
 def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     ibindex = subvbs['data'][subindex]['indexBufferIndex']
@@ -249,7 +270,7 @@ def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
     submesh["ib"] = generate_ib(ibindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')\
         [int(subvbs['data'][subindex]['indexBufferOffset']/3):int(subvbs['data'][subindex]['indexBufferOffset']+subvbs['data'][subindex]['indexCount']/3)]
     submesh["vb"] = generate_vb(vbindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')
-    #Need to insert vertex culling here
+    submesh = cull_vb(submesh) #Comment out this line to produce submeshes identical to G1M Tools
     return(submesh)
 
 def write_submeshes(g1mg_stream, model_mesh_metadata, path = '', e = '<'):
