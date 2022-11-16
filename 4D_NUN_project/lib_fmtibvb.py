@@ -22,8 +22,11 @@ def unpack_dxgi_vector(f, stride, dxgi_format):
     else:
         numtype = 'UNSUPPORTED'
 
-    if numtype == 'FLOAT' and vec_bits == 32 and (vec_elements * vec_bits / 8 == stride):
-        read = list(struct.unpack("<"+str(vec_elements)+"f", f.read(stride)))
+    if numtype == 'FLOAT' and (vec_elements * vec_bits / 8 == stride):
+        if vec_bits == 32:
+            read = list(struct.unpack("<"+str(vec_elements)+"f", f.read(stride)))
+        elif vec_bits == 16:
+            read = list(struct.unpack("<"+str(vec_elements)+"e", f.read(stride)))
     elif numtype == 'UINT' and (vec_elements * vec_bits / 8 == stride):
         if vec_bits == 32:
             read = list(struct.unpack("<"+str(vec_elements)+"I", f.read(stride)))
@@ -38,6 +41,18 @@ def unpack_dxgi_vector(f, stride, dxgi_format):
             read = list(struct.unpack("<"+str(vec_elements)+"h", f.read(stride)))
         elif vec_bits == 8:
             read = list(struct.unpack("<"+str(vec_elements)+"b", f.read(stride)))
+    elif numtype == "UNORM" and (vec_elements * vec_bits / 8 == stride):
+        # First read as integers
+        if vec_bits == 32:
+            read = list(struct.unpack("<"+str(vec_elements)+"I", f.read(stride)))
+        elif vec_bits == 16:
+            read = list(struct.unpack("<"+str(vec_elements)+"H", f.read(stride)))
+        elif vec_bits == 8:
+            read = list(struct.unpack("<"+str(vec_elements)+"B", f.read(stride)))
+        # Convert to normalized floats
+        float_max = ((2**vec_bits)-1)
+        for i in range(len(read)):
+            read[i] = read[i] / float_max
     else:
         read = f.read(stride)
     return (read)
@@ -57,9 +72,12 @@ def pack_dxgi_vector(f, data, stride, dxgi_format):
     else:
         numtype = 'UNSUPPORTED'
 
-    if numtype == 'FLOAT' and vec_bits == 32 and (vec_elements * vec_bits / 8 == stride):
+    if numtype == 'FLOAT' and (vec_elements * vec_bits / 8 == stride):
         for i in range(vec_elements):
-            f.write(struct.pack("<f", data[i]))
+            if vec_bits == 32:
+                f.write(struct.pack("<f", data[i]))
+            elif vec_bits == 16:
+                f.write(struct.pack("<e", data[i]))
     elif numtype == 'UINT' and (vec_elements * vec_bits / 8 == stride):
         for i in range(vec_elements):
             if vec_bits == 32:
@@ -76,6 +94,17 @@ def pack_dxgi_vector(f, data, stride, dxgi_format):
                 f.write(struct.pack("<h", data[i]))
             elif vec_bits == 8:
                 f.write(struct.pack("<b", data[i]))
+    elif numtype == 'UNORM' and (vec_elements * vec_bits / 8 == stride):
+        for i in range(vec_elements):
+            #First convert back to unsigned integers, then pack
+            float_max = ((2**vec_bits)-1)
+            data[i] = int(round(min(max(data[i],0), 1) * float_max))
+            if vec_bits == 32:
+                f.write(struct.pack("<I", data[i]))
+            elif vec_bits == 16:
+                f.write(struct.pack("<H", data[i]))
+            elif vec_bits == 8:
+                f.write(struct.pack("<B", data[i]))
     else:
         write = f.write(data)
     return
