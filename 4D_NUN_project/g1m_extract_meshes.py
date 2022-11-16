@@ -1,9 +1,10 @@
-# Mesh metadata extractor for G1M files.
-# Based entirely off the work of Joschuka (fmt_g1m / Project G1M), huge thank you to Joschuka!
+# Mesh extractor for G1M files.
+# Based off the work of Joschuka (fmt_g1m / Project G1M), huge thank you to Joschuka!
 #
 # GitHub eArmada8/gust_stuff
 
 import glob, os, io, sys, struct, json
+from lib_fmtibvb import *
 
 def parseG1MG(g1mg_chunk,e):
     g1mg_section = {}
@@ -65,8 +66,10 @@ def parseG1MG(g1mg_chunk,e):
                 case 0x00010005:
                     section['type'] = 'VERTEX_ATTRIBUTES'
                     # I think this is correct?
-                    semantic_list = ['Position', 'JointWeight', 'JointIndex', 'Normal', 'PSize', 'UV',\
-                    'Tangent', 'Binormal', 'TessalationFactor', 'PosTransform', 'Color', 'Fog', 'Depth', 'Sample']
+                    #semantic_list = ['Position', 'JointWeight', 'JointIndex', 'Normal', 'PSize', 'UV',\
+                    #'Tangent', 'Binormal', 'TessalationFactor', 'PosTransform', 'Color', 'Fog', 'Depth', 'Sample']
+                    semantic_list = ['POSITION', 'BLENDWEIGHT', 'BLENDINDICES', 'NORMAL', 'PSIZE', 'TEXCOORD',\
+                    'TANGENT', 'BINORMAL', 'TESSFACTOR', 'POSITIONT', 'COLOR', 'FOG', 'DEPTH', 'SAMPLE'] #What is Sample??
                     section_data = {}
                     vertex_attr_block = []
                     for j in range(section['count']):
@@ -81,29 +84,29 @@ def parseG1MG(g1mg_chunk,e):
                             data_type, dummy_var, semantic, attr['layer'] = struct.unpack(e+"4B", f.read(4))
                             match data_type:
                                 case 0x00:
-                                    attr['dataType'] = 'Float_x1'
+                                    attr['dataType'] = 'R32_FLOAT' # Float_x1
                                 case 0x01:
-                                    attr['dataType'] = 'Float_x2'
+                                    attr['dataType'] = 'R32G32_FLOAT' # Float_x2
                                 case 0x02:
-                                    attr['dataType'] = 'Float_x3'
+                                    attr['dataType'] = 'R32G32B32_FLOAT' # Float_x3
                                 case 0x03:
-                                    attr['dataType'] = 'Float_x4'
+                                    attr['dataType'] = 'R32G32B32A32_FLOAT' # Float_x4
                                 case 0x05:
-                                    attr['dataType'] = 'UByte_x4'
+                                    attr['dataType'] = 'R8G8B8A8_UINT' # UByte_x4
                                 case 0x07:
-                                    attr['dataType'] = 'UShort_x4'
+                                    attr['dataType'] = 'R16G16B16A16_UINT' # UShort_x4
                                 case 0x09:
-                                    attr['dataType'] = 'UInt_x4' #Need confirmation per Project G1M
+                                    attr['dataType'] = 'R32G32B32A32_UINT' # UInt_x4, need confirmation per Project G1M
                                 case 0x0A:
-                                    attr['dataType'] = 'HalfFloat_x2'
+                                    attr['dataType'] = 'R16G16_FLOAT' # HalfFloat_x2
                                 case 0x0B:
-                                    attr['dataType'] = 'HalfFloat_x4'
+                                    attr['dataType'] = 'R16G16B16A16_FLOAT' # HalfFloat_x4
                                 case 0x0D:
-                                    attr['dataType'] = 'NormUByte_x4'
+                                    attr['dataType'] = 'R8G8B8A8_UNORM' # NormUByte_x4
                                 case 0xFF:
-                                    attr['dataType'] = 'Dummy'
+                                    attr['dataType'] = 'UNKNOWN' # Dummy
                                 case _:
-                                    attr['dataType'] = 'Unknown'
+                                    attr['dataType'] = 'UNKNOWN' # Unknown
                             attr['semantic'] = semantic_list[semantic]
                             attributes_list.append(attr)
                         attributes['attributes_list'] = attributes_list
@@ -195,8 +198,71 @@ def parseG1MG(g1mg_chunk,e):
         g1mg_section["sections"] = sections
     return(g1mg_section)
 
+def generate_fmts(model_mesh_metadata):
+    # Grab metadata
+    vb = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_BUFFERS"][0]
+    vb_attr = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_ATTRIBUTES"][0]
+    ib = [x for x in model_mesh_metadata['sections'] if x['type'] == "INDEX_BUFFER"][0]
+    # Generate fmt structures from metadata
+    fmts = []
+    for i in range(len(vb['data'])):
+        fmt_elements = []
+        for j in range(len(vb_attr['data'][i]['attributes_list'])):
+            fmt_element = {"id": str(j),
+                "SemanticName": vb_attr['data'][i]['attributes_list'][j]["semantic"],\
+                "SemanticIndex": str(vb_attr['data'][i]['attributes_list'][j]["layer"]),\
+                "Format": vb_attr['data'][i]['attributes_list'][j]["dataType"],\
+                "InputSlot": str(vb_attr['data'][i]['attributes_list'][j]["bufferID"]), # Not sure if correct\
+                "AlignedByteOffset": str(vb_attr['data'][i]['attributes_list'][j]["offset"]),\
+                "InputSlotClass": "per-vertex",\
+                "InstanceDataStepRate": "0"}
+            fmt_elements.append(fmt_element)
+        fmt_struct = {}
+        fmt_struct["stride"] = str(vb['data'][i]['stride'])
+        fmt_struct["topology"] = "trianglelist"
+        fmt_struct["format"] = 'DXGI_FORMAT_' + ib['data'][i]['dataType']
+        fmt_struct["elements"] = fmt_elements
+        fmts.append(fmt_struct)
+    return(fmts)
+
+def generate_ib(index, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
+    ib = [x for x in model_mesh_metadata['sections'] if x['type'] == "INDEX_BUFFER"][0]
+    if index in range(len(fmts)):
+        with io.BytesIO(g1mg_stream) as f:
+            f.seek(ib['data'][index]['offset'])
+            return(read_ib_stream(f.read(int(ib['data'][index]['stride']*ib['data'][index]['count'])), fmts[index], e))
+
+def generate_vb(index, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
+    vb = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_BUFFERS"][0]
+    if index in range(len(fmts)):
+        with io.BytesIO(g1mg_stream) as f:
+            f.seek(vb['data'][index]['offset'])
+            return(read_vb_stream(f.read(int(vb['data'][index]['stride']*vb['data'][index]['count'])), fmts[index], e))
+
+def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
+    subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
+    ibindex = subvbs['data'][subindex]['indexBufferIndex']
+    vbindex = subvbs['data'][subindex]['vertexBufferIndex']
+    submesh = {}
+    submesh["fmt"] = fmts[vbindex]
+    # When inputting index buffer offsets, divide by 3 as library returns triplets and g1m uses single index counts
+    submesh["ib"] = generate_ib(ibindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')\
+        [int(subvbs['data'][subindex]['indexBufferOffset']/3):int(subvbs['data'][subindex]['indexBufferOffset']+subvbs['data'][subindex]['indexCount']/3)]
+    submesh["vb"] = generate_vb(vbindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')
+    #Need to insert vertex culling here
+    return(submesh)
+
+def write_submeshes(g1mg_stream, model_mesh_metadata, path = '', e = '<'):
+    fmts = generate_fmts(model_mesh_metadata)
+    subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
+    for subindex in range(len(subvbs['data'])):
+        submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata, fmts, e)
+        write_fmt(submesh['fmt'],'{0}{1}.fmt'.format(path, subindex))
+        write_ib(submesh['ib'],'{0}{1}.ib'.format(path, subindex), submesh['fmt'])
+        write_vb(submesh['vb'],'{0}{1}.vb'.format(path, subindex), submesh['fmt'])
+
 # The argument passed (g1m_name) is actually the folder name
-def parseG1M(g1m_name):
+def parseG1M(g1m_name, write_buffers = True):
     with open(g1m_name + '.g1m', "rb") as f:
         file = {}
         file["file_magic"], = struct.unpack(">I", f.read(4))
@@ -224,11 +290,16 @@ def parseG1M(g1m_name):
             chunks["chunks"].append(chunk)
             if chunk["magic"] in ['G1MG', 'GM1G']:
                 f.seek(chunk["start_offset"],0)
-                g1mg_data = parseG1MG(f.read(chunk["size"]),e)
+                g1mg_stream = f.read(chunk["size"])
+                model_mesh_metadata = parseG1MG(g1mg_stream,e)
+                if write_buffers == True:
+                    if not os.path.exists(g1m_name):
+                        os.mkdir(g1m_name)
+                    write_submeshes(g1mg_stream, model_mesh_metadata, path = g1m_name+'/', e=e)
             else:
                 f.seek(chunk["start_offset"] + chunk["size"],0) # Move to next chunk
             file["chunks"] = chunks
-    return(g1mg_data)
+    return(model_mesh_metadata)
 
 if __name__ == "__main__":
     # Set current directory
@@ -241,14 +312,13 @@ if __name__ == "__main__":
         args = parser.parse_args()
         if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
             model_mesh_metadata = parseG1M(args.g1m_filename[:-4])
-            with open(args.g1m_filename+"_mesh_metadata.json", "wb") as f:
+            with open(args.g1m_filename[:-4]+"/mesh_metadata.json", "wb") as f:
                 f.write(json.dumps(model_mesh_metadata, indent=4).encode("utf-8"))
     else:
-        # When run without command line arguments, it will attempt to obtain data from all models (skipping skeleton file)
-        modeldirs = [x for x in glob.glob('*_MODEL_*') if os.path.isdir(x)]
-        models = [value for value in modeldirs if value in [x[:-4] for x in glob.glob('*_MODEL_*.g1m')]]
+        # When run without command line arguments, it will attempt to obtain data from all models
+        models = glob.glob('*_MODEL_*.g1m')
         if len(models) > 0:
             for i in range(len(models)):
-                model_mesh_metadata = parseG1M(models[i])
-                with open(models[i]+"/mesh_metadata.json", "wb") as f:
+                model_mesh_metadata = parseG1M(models[i][:-4])
+                with open(models[i][:-4]+"/mesh_metadata.json", "wb") as f:
                     f.write(json.dumps(model_mesh_metadata, indent=4).encode("utf-8"))
