@@ -6,6 +6,10 @@
 import glob, os, io, sys, struct, json
 from lib_fmtibvb import *
 
+# This is dummy code, will be replaced when the various components are integrated into one script
+def parseG1MS(g1m_name):
+    return(read_struct_from_json(g1m_name+"/skel_data.json"))
+
 def parseG1MG(g1mg_chunk,e):
     g1mg_section = {}
     with io.BytesIO(g1mg_chunk) as f:
@@ -122,8 +126,13 @@ def parseG1MG(g1mg_chunk,e):
                         joints = []
                         for k in range(joint_info['joint_count']):
                             joint = {}
-                            f.seek(4,1) #unknown
-                            joint['physicsIndex'], joint['jointIndex'] = struct.unpack(e+"2I", f.read(8))
+                            joint['G1MMIndex'], joint['physicsIndex'], joint['jointIndex'] = struct.unpack(e+"3I", f.read(12))
+                            if joint['jointIndex'] > 0x80000000: #External Skeleton Bone
+                                joint['physicsIndex'] = joint['physicsIndex'] ^ 0x80000000
+                                joint['jointIndex'] = joint['jointIndex'] ^ 0x80000000
+                                joint['0x80000000_flag'] = 'True'
+                            else:
+                                joint['0x80000000_flag'] = 'False'
                             joints.append(joint)
                         joint_info['joints'] = joints
                         joint_block.append(joint_info)
@@ -260,10 +269,18 @@ def cull_vb(submesh):
             submesh['ib'][i][j] = new_indices[submesh['ib'][i][j]]
     return(submesh)
 
-def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
+def generate_vgmap(boneindex, model_mesh_metadata, skel_data):
+    bonepalettes = [x for x in model_mesh_metadata['sections'] if x['type'] == "JOINT_PALETTES"][0]
+    vgmap_json = {}
+    for i in range(len(bonepalettes['data'][boneindex]['joints'])):
+        vgmap_json[skel_data['boneList'][bonepalettes['data'][boneindex]['joints'][i]['jointIndex']]['name']] = i * 3
+    return(vgmap_json)
+
+def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts, e = '<'):
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     ibindex = subvbs['data'][subindex]['indexBufferIndex']
     vbindex = subvbs['data'][subindex]['vertexBufferIndex']
+    boneindex = subvbs['data'][subindex]['bonePaletteIndex']
     submesh = {}
     submesh["fmt"] = fmts[vbindex]
     # When inputting index buffer offsets, divide by 3 as library returns triplets and g1m uses single index counts
@@ -271,16 +288,19 @@ def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
         [int(subvbs['data'][subindex]['indexBufferOffset']/3):int((subvbs['data'][subindex]['indexBufferOffset']+subvbs['data'][subindex]['indexCount'])/3)]
     submesh["vb"] = generate_vb(vbindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')
     submesh = cull_vb(submesh) #Comment out this line to produce submeshes identical to G1M Tools
+    submesh["vgmap"] = generate_vgmap(boneindex, model_mesh_metadata, skel_data)
     return(submesh)
 
-def write_submeshes(g1mg_stream, model_mesh_metadata, path = '', e = '<'):
+def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, path = '', e = '<'):
     fmts = generate_fmts(model_mesh_metadata)
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     for subindex in range(len(subvbs['data'])):
-        submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata, fmts, e)
+        submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts, e)
         write_fmt(submesh['fmt'],'{0}{1}.fmt'.format(path, subindex))
         write_ib(submesh['ib'],'{0}{1}.ib'.format(path, subindex), submesh['fmt'])
         write_vb(submesh['vb'],'{0}{1}.vb'.format(path, subindex), submesh['fmt'])
+        with open('{0}{1}.vgmap'.format(path, subindex), 'wb') as f:
+            f.write(json.dumps(submesh['vgmap'], indent=4).encode("utf-8"))
 
 # The argument passed (g1m_name) is actually the folder name
 def parseG1M(g1m_name, write_buffers = True):
@@ -309,17 +329,20 @@ def parseG1M(g1m_name, write_buffers = True):
             chunk["version"] = f.read(4).hex()
             chunk["size"], = struct.unpack(e+"I", f.read(4))
             chunks["chunks"].append(chunk)
-            if chunk["magic"] in ['G1MG', 'GM1G']:
+            if chunk["magic"] in ['G1MS', 'SM1G'] and have_skeleton == False:
+                skel_data = parseG1MS(g1m_name)
+                f.seek(chunk["start_offset"] + chunk["size"],0) # Move to next chunk
+            elif chunk["magic"] in ['G1MG', 'GM1G']:
                 f.seek(chunk["start_offset"],0)
                 g1mg_stream = f.read(chunk["size"])
                 model_mesh_metadata = parseG1MG(g1mg_stream,e)
-                if write_buffers == True:
-                    if not os.path.exists(g1m_name):
-                        os.mkdir(g1m_name)
-                    write_submeshes(g1mg_stream, model_mesh_metadata, path = g1m_name+'/', e=e)
             else:
                 f.seek(chunk["start_offset"] + chunk["size"],0) # Move to next chunk
             file["chunks"] = chunks
+        if write_buffers == True:
+            if not os.path.exists(g1m_name):
+                os.mkdir(g1m_name)
+            write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, path = g1m_name+'/', e=e)
     return(model_mesh_metadata)
 
 if __name__ == "__main__":
