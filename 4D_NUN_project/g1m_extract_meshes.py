@@ -268,7 +268,7 @@ def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
     submesh["fmt"] = fmts[vbindex]
     # When inputting index buffer offsets, divide by 3 as library returns triplets and g1m uses single index counts
     submesh["ib"] = generate_ib(ibindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')\
-        [int(subvbs['data'][subindex]['indexBufferOffset']/3):int(subvbs['data'][subindex]['indexBufferOffset']+subvbs['data'][subindex]['indexCount']/3)]
+        [int(subvbs['data'][subindex]['indexBufferOffset']/3):int((subvbs['data'][subindex]['indexBufferOffset']+subvbs['data'][subindex]['indexCount'])/3)]
     submesh["vb"] = generate_vb(vbindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')
     submesh = cull_vb(submesh) #Comment out this line to produce submeshes identical to G1M Tools
     return(submesh)
