@@ -172,13 +172,17 @@ def read_ib(ib_filename, fmt_struct, e = '<'):
         ib_stream = f.read()
     return(read_ib_stream(ib_stream, fmt_struct, e))
 
-def write_ib(ib_data, ib_filename, fmt_struct, e = '<'):
+def write_ib_stream(ib_data, ib_stream, fmt_struct, e = '<'):
     # See above about cheating
     ib_stride = int(int(re.findall("[0-9]+", fmt_struct["format"])[0])/8)
+    for i in range(len(ib_data)):
+        for j in range(len(ib_data[i])):
+            pack_dxgi_vector(ib_stream, [ib_data[i][j]], ib_stride, fmt_struct["format"], e)
+    return
+
+def write_ib(ib_data, ib_filename, fmt_struct, e = '<'):
     with open(ib_filename, 'wb') as f:
-        for i in range(len(ib_data)):
-            for j in range(len(ib_data[i])):
-                pack_dxgi_vector(f, [ib_data[i][j]], ib_stride, fmt_struct["format"], e)
+        write_ib_stream(ib_data, f, fmt_struct, e)
     return
 
 def read_vb_stream(vb_stream, fmt_struct, e = '<'):
@@ -213,20 +217,24 @@ def read_vb(vb_filename, fmt_struct, e = '<'):
         vb_stream = f.read()
     return(read_vb_stream(vb_stream, fmt_struct, e))
 
+def write_vb_stream(vb_data, vb_stream, fmt_struct, e = '<'):
+    buffer_strides = []
+    # Calculate individual buffer strides
+    for i in range(len(fmt_struct["elements"])):
+        if i == len(fmt_struct["elements"]) - 1:
+            buffer_strides.append(int(fmt_struct["stride"]) - int(fmt_struct["elements"][i]["AlignedByteOffset"]))
+        else:
+            buffer_strides.append(int(fmt_struct["elements"][i+1]["AlignedByteOffset"]) \
+                - int(fmt_struct["elements"][i]["AlignedByteOffset"]))
+    # Write out the buffers, vertex by vertex.
+    for j in range(len(vb_data[0]["Buffer"])):
+        for i in range(len(fmt_struct["elements"])):
+            pack_dxgi_vector(vb_stream, vb_data[i]["Buffer"][j], buffer_strides[i], fmt_struct["elements"][i]["Format"], e)
+    return
+
 def write_vb(vb_data, vb_filename, fmt_struct, e = '<'):
     with open(vb_filename, 'wb') as f:
-        buffer_strides = []
-        # Calculate individual buffer strides
-        for i in range(len(fmt_struct["elements"])):
-            if i == len(fmt_struct["elements"]) - 1:
-                buffer_strides.append(int(fmt_struct["stride"]) - int(fmt_struct["elements"][i]["AlignedByteOffset"]))
-            else:
-                buffer_strides.append(int(fmt_struct["elements"][i+1]["AlignedByteOffset"]) \
-                    - int(fmt_struct["elements"][i]["AlignedByteOffset"]))
-        # Write out the buffers, vertex by vertex.
-        for j in range(len(vb_data[0]["Buffer"])):
-            for i in range(len(fmt_struct["elements"])):
-                pack_dxgi_vector(f, vb_data[i]["Buffer"][j], buffer_strides[i], fmt_struct["elements"][i]["Format"], e)
+        write_vb_stream(vb_data, f, fmt_struct, e)
     return
 
 # The following two functions are purely for convenience
