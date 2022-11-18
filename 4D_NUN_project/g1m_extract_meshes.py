@@ -328,8 +328,8 @@ def parseG1MG(g1mg_chunk,e):
                     for j in range(section['count']):
                         submesh_info = {}
                         submesh_info["submeshType"], submesh_info["vertexBufferIndex"], submesh_info["bonePaletteIndex"],\
-                        submesh_info["unknown_possibly_mat.palID"], submesh_info["unknown2"], submesh_info["unknown3"],\
-                        submesh_info["materialIndex"], submesh_info["indexBufferIndex"], submesh_info["unknown4"],\
+                        submesh_info["boneIndex"], submesh_info["unknown"], submesh_info["shaderParamIndex"],\
+                        submesh_info["materialIndex"], submesh_info["indexBufferIndex"], submesh_info["unknown2"],\
                         submesh_info["indexBufferPrimType"], submesh_info["vertexBufferOffset"], submesh_info["vertexCount"],\
                         submesh_info["indexBufferOffset"], submesh_info["indexCount"] = struct.unpack(e+"14I", f.read(56))
                         submesh_blocks.append(submesh_info)
@@ -374,11 +374,27 @@ def parseG1MG(g1mg_chunk,e):
         g1mg_section["sections"] = sections
     return(g1mg_section)
 
+def find_submeshes(model_mesh_metadata):
+    # Grab the SUBMESH section
+    subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
+    # Build a quick list of the meshes, each with a list of submeshes
+    vbs = []
+    for i in range(len(subvbs['data'])):
+        vbs.append(subvbs['data'][i]['vertexBufferIndex'])
+    vbsubs = {}
+    for vb in list(set(vbs)):
+        vbsubs[vb] = []
+    for i in range(len(subvbs['data'])):
+        vbsubs[subvbs['data'][i]['vertexBufferIndex']].append(i)
+    return(vbsubs)
+
 def generate_fmts(model_mesh_metadata):
     # Grab metadata
     vb = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_BUFFERS"][0]
     vb_attr = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_ATTRIBUTES"][0]
     ib = [x for x in model_mesh_metadata['sections'] if x['type'] == "INDEX_BUFFER"][0]
+    subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
+    vbsubs = find_submeshes(model_mesh_metadata)
     # Generate fmt structures from metadata
     fmts = []
     for i in range(len(vb['data'])):
@@ -395,7 +411,15 @@ def generate_fmts(model_mesh_metadata):
             fmt_elements.append(fmt_element)
         fmt_struct = {}
         fmt_struct["stride"] = str(vb['data'][i]['stride'])
-        fmt_struct["topology"] = "trianglelist"
+        #For some reason, topology is stored in submesh instead of vertex attributes
+        if subvbs['data'][vbsubs[i][0]]["indexBufferPrimType"] == 1:
+            fmt_struct["topology"] = "pointlist" #THRG says this is Quad, dunno what that is, it's not in DX11?
+        elif subvbs['data'][vbsubs[i][0]]["indexBufferPrimType"] == 3:
+            fmt_struct["topology"] = "trianglelist"
+        elif subvbs['data'][vbsubs[i][0]]["indexBufferPrimType"] == 4:
+            fmt_struct["topology"] = "trianglestrip"
+        else:
+            fmt_struct["topology"] = "undefined"
         fmt_struct["format"] = 'DXGI_FORMAT_' + ib['data'][i]['dataType']
         fmt_struct["elements"] = fmt_elements
         fmts.append(fmt_struct)
