@@ -1,7 +1,7 @@
 # Mesh extractor for G1M files, now includes skeleton extraction code as well.
 #
-# Based primarily off the work of GitHub/Joschuka, huge thank you!  Also many thanks to eterniti for sharing
-# code with me to reference.
+# Based primarily off the work of GitHub/Joschuka and GitHub/three-houses-research-team,
+# huge thank you!  Also many thanks to eterniti for sharing code with me to reference.
 #
 # This code includes functions to convert bones from local space to model space in bind pose, which will
 # be needed for modifying 4D meshes.  As such, it requires both numpy and pyquaternion.
@@ -164,11 +164,24 @@ def parseG1MG(g1mg_chunk,e):
             section['magic'], section['size'], section['count'] = struct.unpack(e+"3I", f.read(12))
             match section['magic']:
                 case 0x00010001:
-                    section['type'] = 'SECTION1'
-                    # Unused
+                    section['type'] = 'GEOMETRY_SOCKETS'
+                    sockets_groups = []
+                    for j in range(section['count']):
+                        sockets_group = {'start': {}, 'end': {}}
+                        sockets_group['start']['bone_id'], sockets_group['start']['unknown'],\
+                            sockets_group['start']['bone_id'] = struct.unpack(e+"2hf", f.read(8))
+                        sockets_group['start']['scale'] = struct.unpack(e+"3f", f.read(12))
+                        sockets_group['start']['position'] = struct.unpack(e+"3f", f.read(12))
+                        sockets_group['end']['bone_id'], sockets_group['end']['unknown'],\
+                            sockets_group['end']['bone_id'] = struct.unpack(e+"2hf", f.read(8))
+                        sockets_group['end']['scale'] = struct.unpack(e+"3f", f.read(12))
+                        sockets_group['end']['position'] = struct.unpack(e+"3f", f.read(12))
+                        sockets_groups.append(sockets_group)
+                    tail_length = (section['size'] - (f.tell() - section['offset']))
+                    section['tail'] = list(struct.unpack(e+"{0}I".format(int(tail_length/4)), f.read(tail_length)))
+                    section['data'] = sockets_groups
                 case 0x00010002:
                     section['type'] = 'MATERIALS'
-                    section_data = {}
                     texture_block = []
                     for j in range(section['count']):
                         texture_section = {}
@@ -185,11 +198,34 @@ def parseG1MG(g1mg_chunk,e):
                         texture_block.append(texture_section)
                     section['data'] = texture_block
                 case 0x00010003:
-                    section['type'] = 'SHADER_SECTION'
-                    # Unreversed by project G1M, use G1M tools to analyze
+                    section['type'] = 'SHADER_PARAMS'
+                    shader_blocks = []
+                    for j in range(section['count']):
+                        shader_info = {}
+                        shader_info['shader_count'], = struct.unpack(e+"I", f.read(4))
+                        shader_block = []
+                        for j in range(shader_info['shader_count']):
+                            shader = {}
+                            shader["size"], name_size, shader["unk1"], shader["buffer_type"], shader["buffer_count"] = struct.unpack(e+"3I2H",f.read(16))
+                            shader["name"] = f.read(name_size).replace(b'\x00',b'').decode()
+                            shader["buffer"] = []
+                            for k in range(shader["buffer_count"]):
+                                match shader["buffer_type"]:
+                                    case 1:
+                                        shader["buffer"].append(struct.unpack(e+"f", f.read(4))[0])
+                                    case 2:
+                                        shader["buffer"].append(struct.unpack(e+"2f", f.read(8)))
+                                    case 3:
+                                        shader["buffer"].append(struct.unpack(e+"3f", f.read(12)))
+                                    case 4:
+                                        shader["buffer"].append(struct.unpack(e+"4f", f.read(16)))
+                                    case 5:
+                                        shader["buffer"].append(struct.unpack(e+"i", f.read(4))[0])
+                            shader_block.append(shader)
+                        shader_blocks.append(shader_block)
+                    section['data'] = shader_blocks
                 case 0x00010004:
                     section['type'] = 'VERTEX_BUFFERS'
-                    section_data = {}
                     vertex_block = []
                     for j in range(section['count']):
                         buffer = {}
@@ -208,7 +244,6 @@ def parseG1MG(g1mg_chunk,e):
                     #'Tangent', 'Binormal', 'TessalationFactor', 'PosTransform', 'Color', 'Fog', 'Depth', 'Sample']
                     semantic_list = ['POSITION', 'BLENDWEIGHT', 'BLENDINDICES', 'NORMAL', 'PSIZE', 'TEXCOORD',\
                     'TANGENT', 'BINORMAL', 'TESSFACTOR', 'POSITIONT', 'COLOR', 'FOG', 'DEPTH', 'SAMPLE'] #What is Sample??
-                    section_data = {}
                     vertex_attr_block = []
                     for j in range(section['count']):
                         attributes = {}
@@ -219,7 +254,7 @@ def parseG1MG(g1mg_chunk,e):
                         for k in range(attributes['attr_count']):
                             attr = {}
                             attr['bufferID'], attr['offset'] = struct.unpack(e+"2H", f.read(4))
-                            data_type, dummy_var, semantic, attr['layer'] = struct.unpack(e+"4B", f.read(4))
+                            data_type, attr['dummy_var'], semantic, attr['layer'] = struct.unpack(e+"4B", f.read(4))
                             match data_type:
                                 case 0x00:
                                     attr['dataType'] = 'R32_FLOAT' # Float_x1
@@ -252,7 +287,6 @@ def parseG1MG(g1mg_chunk,e):
                     section['data'] = vertex_attr_block
                 case 0x00010006:
                     section['type'] = 'JOINT_PALETTES'
-                    section_data = {}
                     joint_block = []
                     for j in range(section['count']):
                         joint_info = {}
@@ -273,7 +307,6 @@ def parseG1MG(g1mg_chunk,e):
                     section['data'] = joint_block
                 case 0x00010007:
                     section['type'] = 'INDEX_BUFFER'
-                    section_data = {}
                     index_block = []
                     for j in range(section['count']):
                         buffer = {}
