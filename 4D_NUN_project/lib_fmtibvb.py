@@ -162,7 +162,7 @@ def read_ib_stream(ib_stream, fmt_struct, e = '<'):
         while f.tell() < length:
             triangle.extend(unpack_dxgi_vector(f, ib_stride, fmt_struct["format"], e))
             vertex_num += 1
-            if vertex_num % 3 == 0:
+            if vertex_num % 3 == 0 or f.tell() == length:
                 ib_data.append(triangle)
                 triangle = []
     return(ib_data)
