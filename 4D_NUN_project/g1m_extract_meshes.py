@@ -169,11 +169,11 @@ def parseG1MG(g1mg_chunk,e):
                     for j in range(section['count']):
                         sockets_group = {'start': {}, 'end': {}}
                         sockets_group['start']['bone_id'], sockets_group['start']['unknown'],\
-                            sockets_group['start']['bone_id'] = struct.unpack(e+"2hf", f.read(8))
+                            sockets_group['start']['weight'] = struct.unpack(e+"2hf", f.read(8))
                         sockets_group['start']['scale'] = struct.unpack(e+"3f", f.read(12))
                         sockets_group['start']['position'] = struct.unpack(e+"3f", f.read(12))
                         sockets_group['end']['bone_id'], sockets_group['end']['unknown'],\
-                            sockets_group['end']['bone_id'] = struct.unpack(e+"2hf", f.read(8))
+                            sockets_group['end']['weight'] = struct.unpack(e+"2hf", f.read(8))
                         sockets_group['end']['scale'] = struct.unpack(e+"3f", f.read(12))
                         sockets_group['end']['position'] = struct.unpack(e+"3f", f.read(12))
                         sockets_groups.append(sockets_group)
