@@ -14,7 +14,7 @@
 # 2. Run this script (in the folder with the g1m file).
 #
 # For command line options:
-# /path/to/python3 g1m_extract_meshes.py --help
+# /path/to/python3 g1m_export_meshes.py --help
 #
 # GitHub eArmada8/gust_stuff
 
@@ -327,7 +327,7 @@ def parseG1MG(g1mg_chunk,e):
                     submesh_blocks = []
                     for j in range(section['count']):
                         submesh_info = {}
-                        submesh_info["submeshType"], submesh_info["vertexBufferIndex"], submesh_info["bonePaletteIndex"],\
+                        submesh_info["submeshFlags"], submesh_info["vertexBufferIndex"], submesh_info["bonePaletteIndex"],\
                         submesh_info["boneIndex"], submesh_info["unknown"], submesh_info["shaderParamIndex"],\
                         submesh_info["materialIndex"], submesh_info["indexBufferIndex"], submesh_info["unknown2"],\
                         submesh_info["indexBufferPrimType"], submesh_info["vertexBufferOffset"], submesh_info["vertexCount"],\
@@ -336,7 +336,7 @@ def parseG1MG(g1mg_chunk,e):
                     section['data'] = submesh_blocks
                 case 0x00010009:
                     #LOD
-                    section['type'] = 'MESH'
+                    section['type'] = 'MESH_LOD'
                     lod_blocks = []
                     for j in range(section['count']):
                         lod_block = {}
@@ -514,7 +514,6 @@ def parseSkelG1M(g1m_name):
         chunks["starting_offset"], chunks["reserved"], chunks["count"] = struct.unpack(e+"III", f.read(12))
         chunks["chunks"] = []
         f.seek(chunks["starting_offset"])
-        nun_data = {}
         have_skeleton = False
         for i in range(chunks["count"]):
             chunk = {}
@@ -554,7 +553,6 @@ def parseG1M(g1m_name, ext_skel = False, overwrite = False, write_buffers = True
         chunks["starting_offset"], chunks["reserved"], chunks["count"] = struct.unpack(e+"III", f.read(12))
         chunks["chunks"] = []
         f.seek(chunks["starting_offset"])
-        nun_data = {}
         have_skeleton = False
         for i in range(chunks["count"]):
             chunk = {}
