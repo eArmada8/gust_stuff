@@ -400,8 +400,8 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser()
         parser.add_argument('g1m_filename', help="Name of g1m file to import into (required).")
         args = parser.parse_args()
-        if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m' and os.path.isdir(x[:-4]):
-            process_g1m(args.g1m_filename[-4:])
+        if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m' and os.path.isdir(args.g1m_filename[:-4]):
+            process_g1m(args.g1m_filename[:-4])
     else:
         g1m_files = glob.glob('*.g1m')
         g1m_files = [x for x in g1m_files if os.path.isdir(x[:-4])]
