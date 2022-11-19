@@ -7,7 +7,7 @@
 # be needed for modifying 4D meshes.  As such, it requires both numpy and pyquaternion.
 #
 # These can be installed by:
-# /path/to/python3 -m pip install numpy quaternion
+# /path/to/python3 -m pip install pyquaternion
 #
 # Steps:
 # 1. Use Gust Tools to extract G1M from the .elixir.gz file.
