@@ -114,10 +114,11 @@ def calc_abs_skeleton(base_skel_data):
 
 def name_bones(skel_data, oid):
     for bone in range(len(skel_data['boneList'])):
+        # Not sure if the auto-generated id is needed, but will preserve it before overwriting it
+        skel_data['boneList'][bone]['bone_id_auto'] = skel_data['boneList'][bone]['bone_id']
         if skel_data['boneToBoneID'][skel_data['boneList'][bone]['i']] in oid['bones'].keys():
-            skel_data['boneList'][bone]['name'] = oid['bones'][skel_data['boneToBoneID'][skel_data['boneList'][bone]['i']]]
-        else:
-            skel_data['boneList'][bone]['name'] = skel_data['boneList'][bone]['bone_id']
+            skel_data['boneList'][bone]['bone_id_auto'] = skel_data['boneList'][bone]['bone_id']
+            skel_data['boneList'][bone]['bone_id'] = oid['bones'][skel_data['boneToBoneID'][skel_data['boneList'][bone]['i']]]
     return(skel_data)
 
 def combine_skeleton(base_skel_data, model_skel_data):
@@ -464,7 +465,7 @@ def generate_vgmap(boneindex, model_mesh_metadata, skel_data):
     bonepalettes = [x for x in model_mesh_metadata['sections'] if x['type'] == "JOINT_PALETTES"][0]
     vgmap_json = {}
     for i in range(len(bonepalettes['data'][boneindex]['joints'])):
-        vgmap_json[skel_data['boneList'][bonepalettes['data'][boneindex]['joints'][i]['jointIndex']]['name']] = i * 3
+        vgmap_json[skel_data['boneList'][bonepalettes['data'][boneindex]['joints'][i]['jointIndex']]['bone_id']] = i * 3
     return(vgmap_json)
 
 def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts, e = '<', cull_vertices = True):
@@ -479,9 +480,13 @@ def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts
         [int(subvbs['data'][subindex]['indexBufferOffset']/3):\
         int((subvbs['data'][subindex]['indexBufferOffset']+subvbs['data'][subindex]['indexCount'])/3)]
     submesh["vb"] = generate_vb(vbindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')
-    if cull_vertices == True:
-        submesh = cull_vb(submesh) #Comment out this line to produce submeshes identical to G1M Tools
-    submesh["vgmap"] = generate_vgmap(boneindex, model_mesh_metadata, skel_data)
+    if cull_vertices == True: # Call with False to produce submeshes identical to G1M Tools
+        submesh = cull_vb(submesh)
+    # Trying to detect if the external skeleton is missing
+    if skel_data['jointCount'] > 1 and not skel_data['boneList'][0]['parentID'] == -2147483648:
+        submesh["vgmap"] = generate_vgmap(boneindex, model_mesh_metadata, skel_data)
+    else:
+        submesh["vgmap"] = False # G1M uses external skeleton that isn't available
     return(submesh)
 
 def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, path = '', e = '<', cull_vertices = True):
@@ -493,8 +498,9 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, path = '', e = 
         write_fmt(submesh['fmt'],'{0}{1}.fmt'.format(path, subindex))
         write_ib(submesh['ib'],'{0}{1}.ib'.format(path, subindex), submesh['fmt'])
         write_vb(submesh['vb'],'{0}{1}.vb'.format(path, subindex), submesh['fmt'])
-        with open('{0}{1}.vgmap'.format(path, subindex), 'wb') as f:
-            f.write(json.dumps(submesh['vgmap'], indent=4).encode("utf-8"))
+        if not submesh["vgmap"] == False:
+            with open('{0}{1}.vgmap'.format(path, subindex), 'wb') as f:
+                f.write(json.dumps(submesh['vgmap'], indent=4).encode("utf-8"))
 
 # The argument passed (g1m_name) is actually the folder name
 def parseSkelG1M(g1m_name):
@@ -535,8 +541,35 @@ def parseSkelG1M(g1m_name):
             file["chunks"] = chunks
     return(ext_skel_data)
 
+def get_ext_skeleton(g1m_name):
+    ext_skel_model = g1m_name.split("_MODEL_")[0]+'_MODEL' # Assuming single external skeleton
+    if os.path.exists(ext_skel_model+'.g1m'):
+        return(parseSkelG1M(ext_skel_model))
+    else:
+        g1m_files = glob.glob('*.g1m')
+        g1m = {}
+        if len(g1m_files) < 1:
+            return False
+        elif len(g1m_files) == 1 and g1m_files[0] == g1m_name+'.g1m':
+            return False
+        else:
+            print('For processing g1m ' + g1m_name + '.g1m, which g1m file has your skeleton?\n')
+            for i in range(len(g1m_files)):
+                print(str(i+1) + '. ' + g1m_files[i])
+            print(str(i+2) + '. No external skeleton available')
+            g1m_file_choice = -1
+            while (g1m_file_choice < 0) or (g1m_file_choice >= len(g1m_files) + 1):
+                try:
+                    g1m_file_choice = int(input("\nPlease enter which g1m file to use:  ")) - 1 
+                except ValueError:
+                    pass
+            if g1m_file_choice in range(len(g1m_files)):
+                return(parseSkelG1M(g1m_files[g1m_file_choice][:-4]))
+            else:
+                return False
+
 # The argument passed (g1m_name) is actually the folder name
-def parseG1M(g1m_name, ext_skel = False, overwrite = False, write_buffers = True, cull_vertices = True):
+def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = True):
     with open(g1m_name + '.g1m', "rb") as f:
         file = {}
         file["file_magic"], = struct.unpack(">I", f.read(4))
@@ -565,8 +598,9 @@ def parseG1M(g1m_name, ext_skel = False, overwrite = False, write_buffers = True
                 f.seek(chunk["start_offset"],0)
                 model_skel_data = parseG1MS(f.read(chunk["size"]),e)
                 if os.path.exists(g1m_name+'Oid.bin'):
-                    model_skel_oid = binary_oid_to_dict(models[i]+'Oid.bin')
-                    model_skel_data = name_bones(model_skel_oid, model_skel_oid)
+                    model_skel_oid = binary_oid_to_dict(g1m_name+'Oid.bin')
+                    model_skel_data = name_bones(model_skel_data, model_skel_oid)
+                ext_skel = get_ext_skeleton(g1m_name)
                 if not ext_skel == False:
                     model_skel_data = combine_skeleton(ext_skel, model_skel_data)
                 have_skeleton == True # I guess some games duplicate this section?
@@ -605,20 +639,12 @@ if __name__ == "__main__":
         parser.add_argument('g1m_filename', help="Name of g1m file to extract G1MG metadata (required).")
         args = parser.parse_args()
         if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
-            ext_skel = False
-            ext_skel_model = args.g1m_filename.split("_MODEL_")[0]+'_MODEL' # Assuming single external skeleton
-            if os.path.exists(ext_skel_model+'.g1m'):
-                ext_skel = parseSkelG1M(ext_skel_model)
-            parseG1M(args.g1m_filename[:-4], ext_skel = ext_skel, overwrite = args.overwrite,\
+            parseG1M(args.g1m_filename[:-4], overwrite = args.overwrite,\
                 write_buffers = args.no_buffers, cull_vertices = args.full_vertices)
     else:
         # When run without command line arguments, it will attempt to obtain data from all models
         models = glob.glob('*_MODEL_*.g1m')
         if len(models) > 0:
-            ext_skel = False
-            ext_skel_model = models[0].split("_MODEL_")[0]+'_MODEL' # Assuming single external skeleton
-            if os.path.exists(ext_skel_model+'.g1m'):
-                ext_skel = parseSkelG1M(ext_skel_model)
             for i in range(len(models)):
-                parseG1M(models[i][:-4], ext_skel = ext_skel)
+                parseG1M(models[i][:-4])
 
