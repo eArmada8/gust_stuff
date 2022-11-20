@@ -542,7 +542,12 @@ def parseSkelG1M(g1m_name):
     return(ext_skel_data)
 
 def get_ext_skeleton(g1m_name):
-    ext_skel_model = g1m_name.split("_MODEL_")[0]+'_MODEL' # Assuming single external skeleton
+    if os.path.exists('elixir.json'): # Assuming first g1m is the skeleton
+        with open('elixir.json','r') as f:
+            elixir = json.loads(re.sub('0x[0-9a-zA-Z+],','0,',f.read()))
+        ext_skel_model = [x for x in elixir['files'] if x[-4:] == '.g1m'][0][:-4]
+    else:
+        ext_skel_model = g1m_name.split("_MODEL_")[0]+'_MODEL' # Assuming single external skeleton
     if os.path.exists(ext_skel_model+'.g1m'):
         return(parseSkelG1M(ext_skel_model))
     else:
@@ -643,8 +648,35 @@ if __name__ == "__main__":
                 write_buffers = args.no_buffers, cull_vertices = args.full_vertices)
     else:
         # When run without command line arguments, it will attempt to obtain data from all models
-        models = glob.glob('*_MODEL_*.g1m')
+        models = []
+        if os.path.exists('elixir.json'):
+            try:
+                with open('elixir.json','r') as f:
+                    elixir = json.loads(re.sub('0x[0-9a-zA-Z+],','0,',f.read()))
+                models = [x for x in elixir['files'] if x[-4:] == '.g1m'][1:]
+            except:
+                pass
         if len(models) > 0:
             for i in range(len(models)):
                 parseG1M(models[i][:-4])
-
+        else:
+            models = glob.glob('*_MODEL_*.g1m')
+            if len(models) > 0:
+                for i in range(len(models)):
+                    parseG1M(models[i][:-4])
+            else:
+                g1m_files = glob.glob('*.g1m')
+                if len(g1m_files) == 1:
+                    parseG1M(g1m_files[0][:-4])
+                elif len(g1m_files) > 1:
+                    print('Which g1m file do you want to unpack?\n')
+                    for i in range(len(g1m_files)):
+                        print(str(i+1) + '. ' + g1m_files[i])
+                    g1m_file_choice = -1
+                    while (g1m_file_choice < 0) or (g1m_file_choice >= len(g1m_files)):
+                        try:
+                            g1m_file_choice = int(input("\nPlease enter which g1m file to use:  ")) - 1 
+                        except ValueError:
+                            pass
+                    if g1m_file_choice in range(len(g1m_files)):
+                        parseG1M(g1m_files[g1m_file_choice][:-4])
