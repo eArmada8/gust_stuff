@@ -1,7 +1,7 @@
 # Mesh importer for G1M files.
 #
-# Based primarily off the work of GitHub/Joschuka and GitHub/three-houses-research-team,
-# huge thank you!  Also many thanks to eterniti for sharing code with me to reference.
+# Based primarily off the work of GitHub/Joschuka, GitHub/three-houses-research-team,
+# and GitHub/eterniti (G1M Tools), huge thank you!
 #
 # This code depends on g1m_extract_meshes.py and lib_fmtibvb.py being in the same folder.
 #
@@ -52,18 +52,21 @@ def parseG1MforG1MG(g1m_name):
             file["chunks"] = chunks
         return(g1mg_stream)
 
-def build_composite_buffers(g1m_name, model_mesh_metadata):
+def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, e = '<'):
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
-    vbsubs = find_submeshes(model_mesh_metadata)
+    mesh_with_subs = find_submeshes(model_mesh_metadata) #dict with key as mesh, value as submesh
+    original_fmts = generate_fmts(model_mesh_metadata)
     # Grab a list of intact meshes (has fmt/ib/vb)
     meshfiles = [x[:-4] for x in glob.glob("*.fmt", root_dir=g1m_name) if (x[:-4] in \
         [x[:-3] for x in glob.glob("*.ib", root_dir=g1m_name)] and x[:-4] in \
         [x[:-3] for x in glob.glob("*.vb", root_dir=g1m_name)])]
+    # Remove any empty mesh files from the list of intact meshes
+    meshfiles = [x for x in meshfiles if os.path.getsize('{0}/{1}.ib'.format(g1m_name, x)) > 0]
     composite_vbs = []
     current_vbsub = 0
-    for i in vbsubs:
+    for i in mesh_with_subs:
         # When processing each mesh, cull the submesh list of submeshes that have been deleted
-        existing_submeshes = [x for x in vbsubs[i] if str(x) in meshfiles]
+        existing_submeshes = [x for x in mesh_with_subs[i] if str(x) in meshfiles]
         if len(existing_submeshes) > 0:
             fmt = read_fmt("{0}/{1}.fmt".format(g1m_name, existing_submeshes[0]))
             composite_vb = []
@@ -104,18 +107,37 @@ def build_composite_buffers(g1m_name, model_mesh_metadata):
                 else:
                     pass # skip if fmt does not match the first
             composite_vbs.append({'original_vb_num': i, 'fmt': fmt, 'vb': composite_vb, 'ib': composite_ib, 'vbsub_info': vbsub_info})
+        else:
+            # Cannot seem to delete entire meshes, so will generate a dummy mesh if all submeshes have been deleted
+            fmt = original_fmts[i]
+            composite_ib = generate_ib(i, g1mg_stream, model_mesh_metadata, original_fmts, e=e)
+            composite_vb = generate_vb(i, g1mg_stream, model_mesh_metadata, original_fmts, e=e)
+            # Place an empty submesh in the mesh
+            vbsub_info = {mesh_with_subs[i][0]: {"submeshFlags": subvbs['data'][mesh_with_subs[i][0]]['submeshFlags'],\
+                        "vertexBufferIndex": i,\
+                        "bonePaletteIndex": subvbs['data'][mesh_with_subs[i][0]]['bonePaletteIndex'],\
+                        "boneIndex": subvbs['data'][mesh_with_subs[i][0]]['boneIndex'],\
+                        "unknown": subvbs['data'][mesh_with_subs[i][0]]['unknown'],\
+                        "shaderParamIndex": subvbs['data'][mesh_with_subs[i][0]]['shaderParamIndex'],\
+                        "materialIndex": subvbs['data'][mesh_with_subs[i][0]]['materialIndex'],\
+                        "indexBufferIndex": i,\
+                        "unknown2": subvbs['data'][mesh_with_subs[i][0]]['unknown2'],\
+                        "indexBufferPrimType": subvbs['data'][mesh_with_subs[i][0]]['indexBufferPrimType'],\
+                        "vertexBufferOffset": 0,\
+                        "vertexCount": 0,\
+                        "indexBufferOffset": 0,\
+                        "indexCount": 0}}
+            composite_vbs.append({'original_vb_num': i, 'fmt': fmt, 'vb': composite_vb, 'ib': composite_ib, 'vbsub_info': vbsub_info})
     return(composite_vbs)
 
 # This will not be accurate until 4D is implemented
 def define_bounding_box(composite_vbs):
-    # Grab first position
-    element = int([x['id'] for x in composite_vbs[0]['fmt']['elements'] if x['SemanticName'] == 'POSITION'][0])
-    box = {'min_x': composite_vbs[0]['vb'][0]['Buffer'][0][0], 'min_y': composite_vbs[0]['vb'][0]['Buffer'][0][1],\
-        'min_z': composite_vbs[0]['vb'][0]['Buffer'][0][2], 'max_x': composite_vbs[0]['vb'][0]['Buffer'][0][0],\
-        'max_y': composite_vbs[0]['vb'][0]['Buffer'][0][1], 'max_z': composite_vbs[0]['vb'][0]['Buffer'][0][2]}
+    # Initialize bounding box - I have no idea why this works, but it does.
+    box = {'min_x': True, 'min_y': True, 'min_z': True, 'max_x': False, 'max_y': False, 'max_z': False}
     # Check every position coordinate and spread out
     for i in range(len(composite_vbs)):
         element = int([x['id'] for x in composite_vbs[i]['fmt']['elements'] if x['SemanticName'] == 'POSITION'][0])
+        #if len(composite_vbs[i]['vb'][element]['Buffer']) > 0:
         for j in range(len(composite_vbs[i]['vb'][element]['Buffer'])):
             box['min_x'] = min(box['min_x'], composite_vbs[i]['vb'][element]['Buffer'][j][0])
             box['min_y'] = min(box['min_y'], composite_vbs[i]['vb'][element]['Buffer'][j][1])
@@ -134,7 +156,7 @@ def build_g1mg(g1m_name, e = '<'):
     except:
         model_mesh_metadata = parseG1MG(g1mg_stream,e)
     #Load all the buffers, and combine submeshes into meshes
-    composite_vbs = build_composite_buffers(g1m_name, model_mesh_metadata)
+    composite_vbs = build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, e)
     bounding_box = define_bounding_box(composite_vbs)
     new_g1mg = bytes()
     with io.BytesIO(g1mg_stream) as f:
@@ -222,7 +244,7 @@ def build_g1mg(g1m_name, e = '<'):
                 'R16G16B16A16_FLOAT': 0x0B, 'R8G8B8A8_UNORM': 0x0D,  'UNKNOWN': 0xFF}
                 for j in range(len(composite_vbs)):
                     vbattr_section += struct.pack(e+"2I", 1, j)
-                    vbattr_section += struct.pack(e+"I", len(model_mesh_metadata['sections'][i]['data'][j]['attributes_list']))
+                    vbattr_section += struct.pack(e+"I", len(composite_vbs[j]['fmt']['elements']))
                     for k in range(len(composite_vbs[j]['fmt']['elements'])):
                         vbattr_section += struct.pack(e+"2H4B", int(composite_vbs[j]['fmt']['elements'][k]['InputSlot']), # Not sure if correct\
                             int(composite_vbs[j]['fmt']['elements'][k]['AlignedByteOffset']),\
@@ -231,7 +253,7 @@ def build_g1mg(g1m_name, e = '<'):
                             semantic_list[composite_vbs[j]['fmt']['elements'][k]['SemanticName']],\
                             int(composite_vbs[j]['fmt']['elements'][k]['SemanticIndex']))
                 new_g1mg += struct.pack(e+"3I", model_mesh_metadata['sections'][i]['magic'], len(vbattr_section)+12,\
-                    len(model_mesh_metadata['sections'][i]['data'])) + vbattr_section
+                    len(composite_vbs)) + vbattr_section
             elif model_mesh_metadata['sections'][i]['type'] == 'JOINT_PALETTES':
                 joint_section = bytes()
                 for j in range(len(model_mesh_metadata['sections'][i]['data'])):
@@ -279,7 +301,6 @@ def build_g1mg(g1m_name, e = '<'):
                 subvb_old_to_new = {}
                 new_index = 0
                 for j in range(len(composite_vbs)):
-                    #existing_submeshes.extend(composite_vbs[j]['vbsub_info'].keys())
                     for k in range(len(composite_vbs[j]['vbsub_info'])):
                         subvb_old_to_new[list(composite_vbs[j]['vbsub_info'])[k]] = {'new_index': new_index,\
                             'submeshFlags': list(composite_vbs[j]['vbsub_info'].values())[k]['submeshFlags']}
@@ -287,42 +308,37 @@ def build_g1mg(g1m_name, e = '<'):
                 existing_subvb = list(subvb_old_to_new) # These are the submeshes that have not been deleted, by old number
                 lod_section = bytes()
                 for j in range(len(model_mesh_metadata['sections'][i]['data'])):
-                    lod_block = bytes() # Build from inside out, as we need inner information to determine outer information
-                    submeshCount1 = 0
-                    submeshCount2 = 0
-                    for k in range(len(model_mesh_metadata['sections'][i]['data'][j]['lod'])):
-                        #First cull submeshes that have been deleted
-                        new_indices = [x for x in list(model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['indices']) if x in existing_subvb]
-                        # In actual G1M, empty sections are allowed with padding, so this may need exploration
-                        if len(new_indices) > 0:
-                            # Grab submeshFlags before mapping to new indices; grab from first available submesh
-                            # The fourth bit is a guess, no other program seems to have tried to alter the LOD block
-                            if ((subvb_old_to_new[new_indices[0]]['submeshFlags'] >> 3) & 1) == 0:
-                                submeshCount1 += 1
-                            else:
-                                submeshCount2 += 1
-                            #Map to new indices
-                            new_indices = [subvb_old_to_new[x]['new_index'] for x in new_indices]
-                            name = model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['name'].encode()
-                            while len(name) < 16:
-                                name += b'\x00'
-                            lod_block += name
-                            lod_block += struct.pack(e+"2H{0}I".format(2+len(new_indices)),\
-                                model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['clothID'],\
-                                model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['unknown'],\
-                                model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['NUNID'],\
-                                len(new_indices), *new_indices)
-                    lod_block_header = struct.pack(e+"I", model_mesh_metadata['sections'][i]['data'][j]['LOD'])
+                    lod_block = struct.pack(e+"I", model_mesh_metadata['sections'][i]['data'][j]['LOD'])
                     if model_mesh_metadata["version"] > 0x30303330:
-                        lod_block_header += struct.pack(e+"2I", model_mesh_metadata['sections'][i]['data'][j]['Group'],\
+                        lod_block += struct.pack(e+"2I", model_mesh_metadata['sections'][i]['data'][j]['Group'],\
                             model_mesh_metadata['sections'][i]['data'][j]['GroupEntryIndex'])
-                    lod_block_header += struct.pack(e+"2I", submeshCount1, submeshCount2)
+                    lod_block += struct.pack(e+"2I", model_mesh_metadata['sections'][i]['data'][j]['submeshCount1'],\
+                        model_mesh_metadata['sections'][i]['data'][j]['submeshCount2'])
                     if model_mesh_metadata["version"] > 0x30303340:
-                        lod_block_header += struct.pack(e+"4I", model_mesh_metadata['sections'][i]['data'][j]['lodRangeStart'],\
+                        lod_block += struct.pack(e+"4I", model_mesh_metadata['sections'][i]['data'][j]['lodRangeStart'],\
                             model_mesh_metadata['sections'][i]['data'][j]['lodRangeLength'],\
                             model_mesh_metadata['sections'][i]['data'][j]['unknown1'],\
                             model_mesh_metadata['sections'][i]['data'][j]['unknown2'])
-                    lod_section += lod_block_header + lod_block
+                    for k in range(len(model_mesh_metadata['sections'][i]['data'][j]['lod'])):
+                        #First cull submeshes that have been deleted, then map to new indices
+                        new_indices = [x for x in list(model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['indices']) if x in existing_subvb]
+                        new_indices = [subvb_old_to_new[x]['new_index'] for x in new_indices]
+                        name = model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['name'].encode()
+                        while len(name) < 16:
+                            name += b'\x00'
+                        lod_block += name
+                        lod_block += struct.pack(e+"2H2I",\
+                            model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['clothID'],\
+                            model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['unknown'],\
+                            model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['NUNID'],\
+                            len(new_indices))
+                        # In actual G1M, empty sections are allowed with padding, so this may need exploration
+                        if len(new_indices) > 0:
+                            #Map to new indices
+                            lod_block += struct.pack(e+"{0}I".format(len(new_indices)), *new_indices)
+                        else:
+                            lod_block += struct.pack(e+"I", 0)
+                    lod_section += lod_block
                 new_g1mg += struct.pack(e+"3I", model_mesh_metadata['sections'][i]['magic'], len(lod_section)+12,\
                     len(model_mesh_metadata['sections'][i]['data'])) + lod_section
             else:
