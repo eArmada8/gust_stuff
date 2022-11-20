@@ -106,7 +106,6 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, e = '<')
                         "indexCount": int(len(ib) * 3)}
                 else:
                     pass # skip if fmt does not match the first
-            composite_vbs.append({'original_vb_num': i, 'fmt': fmt, 'vb': composite_vb, 'ib': composite_ib, 'vbsub_info': vbsub_info})
         else:
             # Cannot seem to delete entire meshes, so will generate a dummy mesh if all submeshes have been deleted
             fmt = original_fmts[i]
@@ -127,7 +126,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, e = '<')
                         "vertexCount": 0,\
                         "indexBufferOffset": 0,\
                         "indexCount": 0}}
-            composite_vbs.append({'original_vb_num': i, 'fmt': fmt, 'vb': composite_vb, 'ib': composite_ib, 'vbsub_info': vbsub_info})
+        composite_vbs.append({'original_vb_num': i, 'fmt': fmt, 'vb': composite_vb, 'ib': composite_ib, 'vbsub_info': vbsub_info})
     return(composite_vbs)
 
 # This will not be accurate until 4D is implemented
