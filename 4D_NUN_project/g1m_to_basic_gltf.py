@@ -1,4 +1,26 @@
-import copy
+# Very basic glTF builder for G1M files, still kind of broken and no skeleton code.
+#
+# Based primarily off the work of GitHub/Joschuka and GitHub/three-houses-research-team,
+# huge thank you!  Also many thanks to eterniti for sharing code with me to reference.
+# Credit also to the Khronos group tutorial.
+#
+# This code depends on g1m_export_meshes.py, g1m_import_meshes.py and lib_fmtibvb.py being in the same folder.
+#
+# This code requires both numpy and pyquaternion for skeletal manipulation.
+#
+# These can be installed by:
+# /path/to/python3 -m pip install pyquaternion
+#
+# Steps:
+# 1. Use Gust Tools to extract G1M from the .elixir.gz file.
+# 2. Run this script (in the folder with the g1m file).
+#
+# For command line options:
+# /path/to/python3 g1m_to_basic_gltf.py --help
+#
+# GitHub eArmada8/gust_stuff
+
+import glob, os, io, sys, copy, json
 from g1m_export_meshes import *
 from g1m_import_meshes import *
 
