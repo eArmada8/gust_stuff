@@ -217,7 +217,7 @@ def read_vb(vb_filename, fmt_struct, e = '<'):
         vb_stream = f.read()
     return(read_vb_stream(vb_stream, fmt_struct, e))
 
-def write_vb_stream(vb_data, vb_stream, fmt_struct, e = '<'):
+def write_vb_stream(vb_data, vb_stream, fmt_struct, e = '<', stripe = True):
     buffer_strides = []
     # Calculate individual buffer strides
     for i in range(len(fmt_struct["elements"])):
@@ -226,15 +226,21 @@ def write_vb_stream(vb_data, vb_stream, fmt_struct, e = '<'):
         else:
             buffer_strides.append(int(fmt_struct["elements"][i+1]["AlignedByteOffset"]) \
                 - int(fmt_struct["elements"][i]["AlignedByteOffset"]))
-    # Write out the buffers, vertex by vertex.
-    for j in range(len(vb_data[0]["Buffer"])):
+    if stripe == True:
+        # Write out the buffers, vertex by vertex.
+        for j in range(len(vb_data[0]["Buffer"])):
+            for i in range(len(fmt_struct["elements"])):
+                pack_dxgi_vector(vb_stream, vb_data[i]["Buffer"][j], buffer_strides[i], fmt_struct["elements"][i]["Format"], e)
+    else:
+        # Write out the buffers, element by element.
         for i in range(len(fmt_struct["elements"])):
-            pack_dxgi_vector(vb_stream, vb_data[i]["Buffer"][j], buffer_strides[i], fmt_struct["elements"][i]["Format"], e)
+            for j in range(len(vb_data[0]["Buffer"])):
+                pack_dxgi_vector(vb_stream, vb_data[i]["Buffer"][j], buffer_strides[i], fmt_struct["elements"][i]["Format"], e)
     return
 
-def write_vb(vb_data, vb_filename, fmt_struct, e = '<'):
+def write_vb(vb_data, vb_filename, fmt_struct, e = '<', stripe = True):
     with open(vb_filename, 'wb') as f:
-        write_vb_stream(vb_data, f, fmt_struct, e)
+        write_vb_stream(vb_data, f, fmt_struct, e=e, stripe=stripe)
     return
 
 # The following two functions are purely for convenience
