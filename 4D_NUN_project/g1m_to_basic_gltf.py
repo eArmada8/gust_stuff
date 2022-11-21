@@ -22,7 +22,6 @@
 
 import glob, os, io, sys, copy, json
 from g1m_export_meshes import *
-from g1m_import_meshes import *
 
 # This only handles formats compatible with G1M
 def convert_format_for_gltf(dxgi_format):
@@ -89,10 +88,19 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, e = 
     gltf_data['meshes'] = []
     gltf_data['nodes'] = []
     gltf_data['scenes'] = [{}]
+    gltf_data['scenes'][0]['nodes'] = [0]
     gltf_data['scene'] = 0
     giant_buffer = bytes()
     mesh_nodes = []
     buffer_view = 0
+    for i in range(len(model_skel_data['boneList'])):
+        node = {'children': [], 'name': model_skel_data['boneList'][i]['bone_id']}
+        if i > 0:
+            node['rotation'] = model_skel_data['boneList'][i]['rotation_q']
+            node['scale'] = model_skel_data['boneList'][i]['scale']
+            node['translation'] = model_skel_data['boneList'][i]['pos_xyz']
+            gltf_data['nodes'][model_skel_data['boneList'][i]['parentID']]['children'].append(len(gltf_data['nodes']))
+        gltf_data['nodes'].append(node)
     for subindex in range(len(subvbs['data'])):
         # Skip mesh if 4D
         if [x for x in gltf_fmts[subvbs['data'][subindex]['vertexBufferIndex']]['elements'] if x['SemanticName'] == 'POSITION'][0]['accessor_type'] == 'VEC3':
@@ -143,9 +151,9 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, e = 
                 primitive["mode"] = 0 #POINTS
             gltf_data['meshes'].append({"primitives": [primitive], "name": "Mesh_{0}".format(subindex)})
             mesh_nodes.append(len(gltf_data['nodes']))
-            gltf_data['nodes'].append({'mesh': buffer_view})
+            gltf_data['nodes'].append({'mesh': buffer_view, 'name': "Mesh_{0}".format(subindex)})
             buffer_view += 1
-    gltf_data['scenes'][0]['nodes'] = mesh_nodes
+    gltf_data['scenes'][0]['nodes'].extend(mesh_nodes)
     gltf_data['buffers'].append({"byteLength": len(giant_buffer), "uri": g1m_name+'.bin'})
     with open(g1m_name+'.bin', 'wb') as f:
         f.write(giant_buffer)
@@ -198,7 +206,7 @@ def G1M2glTF(g1m_name, overwrite = False):
         if os.path.exists(g1m_name + '.gltf') and (overwrite == False):
             if str(input(g1m_name + ".gltf exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
                 overwrite = True
-        if (overwrite == True) or not os.path.exists(g1m_name):
+        if (overwrite == True) or not os.path.exists(g1m_name + '.gltf'):
             write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, e=e)
     return(True)
 
