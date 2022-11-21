@@ -627,8 +627,8 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
                     path = g1m_name+'/', e=e, cull_vertices = cull_vertices)
             with open(g1m_name+"/mesh_metadata.json", "wb") as f:
                 f.write(json.dumps(model_mesh_metadata, indent=4).encode("utf-8"))
-            with open(g1m_name+"/skel_data.json", "wb") as f:
-                f.write(json.dumps(model_skel_data, indent=4).encode("utf-8"))
+            #with open(g1m_name+"/skel_data.json", "wb") as f:
+                #f.write(json.dumps(model_skel_data, indent=4).encode("utf-8"))
     return(True)
 
 if __name__ == "__main__":
@@ -641,7 +641,7 @@ if __name__ == "__main__":
         parser.add_argument('-n', '--no_buffers', help="Do not write fmt/ib/vb/vgmap files", action="store_false")
         parser.add_argument('-f', '--full_vertices',\
             help="Output full meshes instead of submeshs (identical to G1M tools)", action="store_false")
-        parser.add_argument('g1m_filename', help="Name of g1m file to extract G1MG metadata (required).")
+        parser.add_argument('g1m_filename', help="Name of g1m file to extract meshes / G1MG metadata (required).")
         args = parser.parse_args()
         if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
             parseG1M(args.g1m_filename[:-4], overwrite = args.overwrite,\
