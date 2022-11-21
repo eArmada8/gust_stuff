@@ -3,7 +3,7 @@
 # Based primarily off the work of GitHub/Joschuka, GitHub/three-houses-research-team,
 # and GitHub/eterniti (G1M Tools), huge thank you!
 #
-# This code depends on g1m_extract_meshes.py and lib_fmtibvb.py being in the same folder.
+# This code depends on g1m_export_meshes.py and lib_fmtibvb.py being in the same folder.
 #
 # Steps:
 # 1. Run g1m_export_meshes.py
