@@ -605,12 +605,13 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
                 if os.path.exists(g1m_name+'Oid.bin'):
                     model_skel_oid = binary_oid_to_dict(g1m_name+'Oid.bin')
                     model_skel_data = name_bones(model_skel_data, model_skel_oid)
-                ext_skel = get_ext_skeleton(g1m_name)
-                if not ext_skel == False:
-                    model_skel_data = combine_skeleton(ext_skel, model_skel_data)
-                elif model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] == -214748364:
+                if model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] == -214748364:
                     #Internal Skeleton
                     model_skel_data = calc_abs_skeleton(model_skel_data)
+                else:
+                    ext_skel = get_ext_skeleton(g1m_name)
+                    if not ext_skel == False:
+                        model_skel_data = combine_skeleton(ext_skel, model_skel_data)
                 have_skeleton == True # I guess some games duplicate this section?
             elif chunk["magic"] in ['G1MG', 'GM1G']:
                 f.seek(chunk["start_offset"],0)
