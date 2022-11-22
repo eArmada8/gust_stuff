@@ -126,6 +126,8 @@ def expand_weight_groups_as_needed(submesh):
     return(new_submesh)
 
 def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, e = '<'):
+    # Trying to detect if the external skeleton is missing
+    skel_present = model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] == -2147483648
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     fmts = generate_fmts(model_mesh_metadata)
     gltf_data = {}
@@ -224,26 +226,28 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, e = 
                 else:
                     primitive["mode"] = 0 #POINTS
                 mesh_nodes.append(len(gltf_data['nodes']))
-                gltf_data['nodes'].append({'skin': len(gltf_data['skins']), 'mesh': len(gltf_data['meshes']), 'name': "Mesh_{0}".format(subindex)})
+                gltf_data['nodes'].append({'mesh': len(gltf_data['meshes']), 'name': "Mesh_{0}".format(subindex)})
                 gltf_data['meshes'].append({"primitives": [primitive], "name": "Mesh_{0}".format(subindex)})
-                skin_bones = list_of_utilized_bones(submesh, model_skel_data)
-                inv_mtx_buffer = bytes()
-                for i in range(len(skin_bones)):
-                    mtx = Quaternion(model_skel_data['boneList'][skin_bones[i]]['abs_q']).transformation_matrix
-                    [mtx[0,3],mtx[1,3],mtx[2,3]] = model_skel_data['boneList'][skin_bones[i]]['abs_p']
-                    inv_bind_mtx = numpy.linalg.inv(mtx)
-                    inv_bind_mtx = numpy.ndarray.transpose(inv_bind_mtx)
-                    inv_mtx_buffer += struct.pack(e+"16f", *[num for row in inv_bind_mtx for num in row])
-                gltf_data['skins'].append({"inverseBindMatrices": len(gltf_data['accessors']), "joints": skin_bones})
-                gltf_data['accessors'].append({"bufferView" : buffer_view,\
-                    "componentType": 5126,\
-                    "count": len(skin_bones),\
-                    "type": "MAT4"})
-                gltf_data['bufferViews'].append({"buffer": 0,\
-                    "byteOffset": len(giant_buffer),\
-                    "byteLength": len(inv_mtx_buffer)})
-                buffer_view += 1
-                giant_buffer += inv_mtx_buffer
+                if skel_present:
+                    gltf_data['nodes'][-1]['skin'] = len(gltf_data['skins'])
+                    skin_bones = list_of_utilized_bones(submesh, model_skel_data)
+                    inv_mtx_buffer = bytes()
+                    for i in range(len(skin_bones)):
+                        mtx = Quaternion(model_skel_data['boneList'][skin_bones[i]]['abs_q']).transformation_matrix
+                        [mtx[0,3],mtx[1,3],mtx[2,3]] = model_skel_data['boneList'][skin_bones[i]]['abs_p']
+                        inv_bind_mtx = numpy.linalg.inv(mtx)
+                        inv_bind_mtx = numpy.ndarray.transpose(inv_bind_mtx)
+                        inv_mtx_buffer += struct.pack(e+"16f", *[num for row in inv_bind_mtx for num in row])
+                    gltf_data['skins'].append({"inverseBindMatrices": len(gltf_data['accessors']), "joints": skin_bones})
+                    gltf_data['accessors'].append({"bufferView" : buffer_view,\
+                        "componentType": 5126,\
+                        "count": len(skin_bones),\
+                        "type": "MAT4"})
+                    gltf_data['bufferViews'].append({"buffer": 0,\
+                        "byteOffset": len(giant_buffer),\
+                        "byteLength": len(inv_mtx_buffer)})
+                    buffer_view += 1
+                    giant_buffer += inv_mtx_buffer
                 del(submesh)
     gltf_data['scenes'][0]['nodes'].extend(mesh_nodes)
     gltf_data['buffers'].append({"byteLength": len(giant_buffer), "uri": g1m_name+'.bin'})
@@ -287,6 +291,9 @@ def G1M2glTF(g1m_name, overwrite = False):
                 ext_skel = get_ext_skeleton(g1m_name)
                 if not ext_skel == False:
                     model_skel_data = combine_skeleton(ext_skel, model_skel_data)
+                elif model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] == -214748364:
+                    #Internal Skeleton
+                    model_skel_data = calc_abs_skeleton(model_skel_data)
                 have_skeleton == True # I guess some games duplicate this section?
             elif chunk["magic"] in ['G1MG', 'GM1G']:
                 f.seek(chunk["start_offset"],0)
