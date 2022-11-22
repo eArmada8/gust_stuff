@@ -1,5 +1,5 @@
 # Gust (Atelier) mesh export and import
-A pair of scripts to get the mesh data out of G1M files and back into G1M files.  The output is in .fmt/.ib/.vb/.vgmap files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, and metadata is in JSON format.
+A pair of scripts to get the mesh data out of G1M files and back into G1M files.  The output is in .fmt/.ib/.vb/.vgmap files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, and metadata is in JSON format.  Also included is a script to generate a basic glTF model with skeleton that can be used for rigging.
 
 ## Credits:
 99.9% of my understanding of the G1M format comes from the reverse engineering work of Joschuka (github/Joschuka), and specifically his deprecated fmt_g1m.py plugin for Noesis: https://github.com/Joschuka/fmt_g1m
@@ -10,9 +10,11 @@ None of this would be possible without the work of DarkStarSword and his amazing
 
 I am very thankful for Joschuka, eterniti, DarkStarSword, the THRG team and VitaSmith for their brilliant work and for sharing that work so freely.
 
+Finally, I want to thank the folks who wrote the glTF tutorial (github/KhronosGroup/glTF-Tutorials).
+
 ## Requirements:
 1. Python 3.10 and newer is required for use of these scripts.  It is free from the Microsoft Store, for Windows users.  For Linux users, please consult your distro.
-2. The numpy and pyquaternion modules for python are needed.  Install by typing "python3 -m pip install pyquaternion" in the command line / shell.  (The io, re, struct, sys, os, shutil, glob, copy, json, argparse modules are also required, but these are all already included in most basic python installations.)
+2. The numpy and pyquaternion modules for python are needed.  Install by typing "python3 -m pip install pyquaternion" in the command line / shell.  (When installing pyquaternion, numpy will automatically be installed alongside pyquaternion.  The io, re, struct, sys, os, shutil, glob, copy, json, argparse modules are also required, but these are all already included in most basic python installations.)
 3. The output can be imported into Blender using DarkStarSword's amazing plugin: https://github.com/DarkStarSword/3d-fixes/blob/master/blender_3dmigoto.py
 4. g1m_export_meshes.py is dependent on lib_fmtibvb.py, which must be in the same folder.  
 g1m_import_meshes.py is dependent on both g1m_export_meshes.py and lib_fmtibvb.py.
@@ -48,3 +50,17 @@ It will make a backup of the original, then overwrite the original.  It will not
 
 `-h, --help`
 Shows help message.
+
+### g1m_to_basic_gltf.py
+Double click the python script to run and it will attempt to convert the G1M model into a basic glTF model, with skeleton.  It currently skips all 4D meshes.  This tool as written is for obtaining the skeleton for rigging the .fmt/.ib/.vb/.vgmap meshes from the export tool.  *The meshes included in the model are not particularly useful as they cannot be exported back to G1M,* just delete them and import the exported meshes (.fmt/.ib/.vb./vgmap) instead - the tool only includes meshes because Blender refuses to open a glTF file without meshes.  After importing the meshes, Ctrl-click on the armature and parent (Object -> Parent -> Armature Deform {without the extra options}).
+
+It will search the current folder for elixir.json (from Gust Tools) and export the meshes into a folder with the same name as the g1m file; it will assume the first g1m file is the external skeleton.  If it does not find (or cannot read) the elixir.json file, it will look for Atelier-style naming (e.g. PCxxA_MODEL_default.g1m etc) and attempt to process those files by guessing which file is the external skeleton.  Finally, if it cannot find models that way, it will display a list of all g1m files and ask which one you want it to convert.
+
+**Command line arguments:**
+`g1m_to_basic_gltf.py [-h] [-o] g1m_filename`
+
+`-h, --help`
+Shows help message.
+
+`-o, --overwrite`
+Overwrite existing files without prompting.
