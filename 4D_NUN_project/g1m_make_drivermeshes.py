@@ -11,19 +11,22 @@ import glob, os, io, sys, struct, json, numpy
 from pyquaternion import Quaternion
 from lib_fmtibvb import *
 
-if __name__ == "__main__":
-    # Set current directory
-    os.chdir(os.path.abspath(os.path.dirname(__file__)))
+def make_drivermesh_fmt():
+    return({'stride': '36', 'topology': 'trianglelist', 'format': 'DXGI_FORMAT_R16_UINT',\
+    'elements': [{'id': '0', 'SemanticName': 'POSITION', 'SemanticIndex': '0', 'Format': 'R32G32B32_FLOAT',\
+    'InputSlot': '0', 'AlignedByteOffset': '0', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'},\
+    {'id': '1', 'SemanticName': 'BLENDWEIGHT', 'SemanticIndex': '0', 'Format': 'R32G32B32A32_FLOAT',\
+    'InputSlot': '0', 'AlignedByteOffset': '12', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'},\
+    {'id': '2', 'SemanticName': 'BLENDINDICES', 'SemanticIndex': '0', 'Format': 'R16G16B16A16_UINT',\
+    'InputSlot': '0', 'AlignedByteOffset': '28', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}]})
+
+def calc_nun_maps(nun_data, skel_data):
     try:
-        nun_data = read_struct_from_json('nun_data.json')
-        skel_data = read_struct_from_json('skel_data.json')
-        NUNProps = []
         nunvOffset = 0
         nunsOffset = 0
         clothMap = []
         clothParentIDMap = []
         driverMeshList = []
-        driverMesh_fmt = read_fmt('drivermesh_base.fmt')
         for i in range(len(nun_data)):
             boneStart = len(skel_data['boneList'])
             parentBone = skel_data['boneIDList'][nun_data[i]['parentBoneID']]
@@ -114,9 +117,24 @@ if __name__ == "__main__":
             clothMap.append(nunoMap)
             clothParentIDMap.append(parentBone)
             driverMeshList.append(driverMesh)
-            write_fmt(driverMesh_fmt, 'drivermesh'+str(i)+'.fmt')
-            write_ib(driverMesh["indices"], 'drivermesh'+str(i)+'.ib', driverMesh_fmt)
-            write_vb(driverMesh["vertices"], 'drivermesh'+str(i)+'.vb', driverMesh_fmt)
-        #write_struct_to_json(driverMeshList,'drivermeshinfo')
+        return({'clothMap': clothMap, 'clothParentIDMap': clothParentIDMap, 'driverMeshList': driverMeshList})
     except:
-        pass
+        return(False)
+
+def write_drivermeshes(driver_struct):         
+    driverMesh_fmt = make_drivermesh_fmt()
+    for i in range(len(driver_struct['driverMeshList'])):
+        write_fmt(driverMesh_fmt, 'drivermesh'+str(i)+'.fmt')
+        write_ib(driver_struct['driverMeshList'][i]["indices"], 'drivermesh'+str(i)+'.ib', driverMesh_fmt)
+        write_vb(driver_struct['driverMeshList'][i]["vertices"], 'drivermesh'+str(i)+'.vb', driverMesh_fmt)
+    return()
+
+if __name__ == "__main__":
+    # Set current directory
+    os.chdir(os.path.abspath(os.path.dirname(__file__)))
+    if os.path.exists('nun_data.json') and os.path.exists('skel_data.json'):
+        nun_data = read_struct_from_json('nun_data.json')
+        skel_data = read_struct_from_json('skel_data.json')
+        nun_maps = calc_nun_maps(nun_data, skel_data)
+        write_drivermeshes(nun_maps)
+        write_struct_to_json(nun_maps,'drivermeshinfo')
