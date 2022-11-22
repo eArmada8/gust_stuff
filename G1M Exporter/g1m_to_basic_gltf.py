@@ -166,8 +166,12 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, e = 
             submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata, model_skel_data, fmts, e=e, cull_vertices = True)
             # Skip empty submeshes
             if len(submesh['ib']) > 0:
-                submesh = convert_bones_to_single_file(submesh)
-                submesh = expand_weight_groups_as_needed(submesh)
+                skip_weights = False
+                try:
+                    submesh = convert_bones_to_single_file(submesh)
+                    submesh = expand_weight_groups_as_needed(submesh)
+                except:
+                    skip_weights = True # Certain models do not have weights at all
                 gltf_fmt = convert_fmt_for_gltf(submesh['fmt'])
                 vb_stream = io.BytesIO()
                 write_vb_stream(submesh['vb'], vb_stream, gltf_fmt, e=e, stripe = False)
@@ -228,7 +232,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, e = 
                 mesh_nodes.append(len(gltf_data['nodes']))
                 gltf_data['nodes'].append({'mesh': len(gltf_data['meshes']), 'name': "Mesh_{0}".format(subindex)})
                 gltf_data['meshes'].append({"primitives": [primitive], "name": "Mesh_{0}".format(subindex)})
-                if skel_present:
+                if skel_present and not skip_weights:
                     gltf_data['nodes'][-1]['skin'] = len(gltf_data['skins'])
                     skin_bones = list_of_utilized_bones(submesh, model_skel_data)
                     inv_mtx_buffer = bytes()
