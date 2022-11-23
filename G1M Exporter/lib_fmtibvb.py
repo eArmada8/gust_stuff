@@ -95,16 +95,17 @@ def pack_dxgi_vector(f, data, stride, dxgi_format, e = '<'):
             elif vec_bits == 8:
                 f.write(struct.pack(e+"b", data[i]))
     elif numtype == 'UNORM' and (vec_elements * vec_bits / 8 == stride):
+        converted_data = []
         for i in range(vec_elements):
             #First convert back to unsigned integers, then pack
             float_max = ((2**vec_bits)-1)
-            data[i] = int(round(min(max(data[i],0), 1) * float_max))
+            converted_data.append(int(round(min(max(data[i],0), 1) * float_max)))
             if vec_bits == 32:
-                f.write(struct.pack(e+"I", data[i]))
+                f.write(struct.pack(e+"I", converted_data[i]))
             elif vec_bits == 16:
-                f.write(struct.pack(e+"H", data[i]))
+                f.write(struct.pack(e+"H", converted_data[i]))
             elif vec_bits == 8:
-                f.write(struct.pack(e+"B", data[i]))
+                f.write(struct.pack(e+"B", converted_data[i]))
     else:
         write = f.write(data)
     return
@@ -230,7 +231,7 @@ def read_vb(vb_filename, fmt_struct, e = '<'):
         vb_stream = f.read()
     return(read_vb_stream(vb_stream, fmt_struct, e))
 
-def write_vb_stream(vb_data, vb_stream, fmt_struct, e = '<', stripe = True):
+def write_vb_stream(vb_data, vb_stream, fmt_struct, e = '<', interleave = True):
     buffer_strides = []
     # Calculate individual buffer strides
     for i in range(len(fmt_struct["elements"])):
@@ -239,7 +240,7 @@ def write_vb_stream(vb_data, vb_stream, fmt_struct, e = '<', stripe = True):
         else:
             buffer_strides.append(int(fmt_struct["elements"][i+1]["AlignedByteOffset"]) \
                 - int(fmt_struct["elements"][i]["AlignedByteOffset"]))
-    if stripe == True:
+    if interleave == True:
         # Write out the buffers, vertex by vertex.
         for j in range(len(vb_data[0]["Buffer"])):
             for i in range(len(fmt_struct["elements"])):
@@ -251,9 +252,9 @@ def write_vb_stream(vb_data, vb_stream, fmt_struct, e = '<', stripe = True):
                 pack_dxgi_vector(vb_stream, vb_data[i]["Buffer"][j], buffer_strides[i], fmt_struct["elements"][i]["Format"], e)
     return
 
-def write_vb(vb_data, vb_filename, fmt_struct, e = '<', stripe = True):
+def write_vb(vb_data, vb_filename, fmt_struct, e = '<', interleave = True):
     with open(vb_filename, 'wb') as f:
-        write_vb_stream(vb_data, f, fmt_struct, e=e, stripe=stripe)
+        write_vb_stream(vb_data, f, fmt_struct, e=e, interleave=interleave)
     return
 
 # The following two functions are purely for convenience
@@ -267,4 +268,3 @@ def write_struct_to_json(struct, filename):
     with open(filename, "wb") as f:
         f.write(json.dumps(struct, indent=4).encode("utf-8"))
     return
-
