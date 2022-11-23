@@ -160,7 +160,7 @@ def parseNUNO1(chunkVersion, f, e):
     skip2, = struct.unpack(e+"I", f.read(4))
     skip3, = struct.unpack(e+"I", f.read(4))
     f.read(0x3C)
-    if chunkVersion > 0x30303233:       
+    if chunkVersion > 0x30303233:
         f.read(0x10)
     if chunkVersion >= 0x30303235:
         f.read(0x10)
@@ -207,7 +207,7 @@ def parseNUNO3(chunkVersion, f, e):
     skip2, = struct.unpack(e+"i", f.read(4))
     skip3, = struct.unpack(e+"i", f.read(4))
     skip4, = struct.unpack(e+"i", f.read(4))
-    if chunkVersion < 0x30303332:       
+    if chunkVersion < 0x30303332:
         f.read(0xA8)
         if chunkVersion >= 0x30303235:
             f.read(0x10)
@@ -244,7 +244,7 @@ def parseNUNV1(chunkVersion, f, e):
     unknownSectionCount, = struct.unpack(e+"I", f.read(4))
     skip1, = struct.unpack(e+"i", f.read(4))
     f.read(0x54)
-    if chunkVersion >= 0x30303131:       
+    if chunkVersion >= 0x30303131:
         f.read(0x10)
     nunv1_block['controlPoints'] = []
     for i in range(controlPointCount):
@@ -818,19 +818,21 @@ def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts
     return(submesh)
 
 def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', remove_physics = False):
+    new_fmt = copy.deepcopy(submesh['fmt'])
+    new_vb = copy.deepcopy(submesh['vb'])
     position_data = [x for x in submesh['vb'] if x['SemanticName'] == 'POSITION'][0]['Buffer']
+    normal_data = copy.deepcopy([x for x in submesh['vb'] if x['SemanticName'] == 'NORMAL'][0]['Buffer'])
     BlendIndicesList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDINDICES'][0]['Buffer']
     skinWeightList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDWEIGHT'][0]['Buffer']
     nunoMap = nun_maps['clothMap'][NUNID]
     clothParentBone = [x for x in model_skel_data['boneList'] if x['i'] == nun_maps['clothParentIDMap'][NUNID]][0]
-    clothStuff3Buffer = [x[3] for x in position_data]
-    normal_data = [x for x in submesh['vb'] if x['SemanticName'] == 'NORMAL'][0]['Buffer']
+    #clothStuff3Buffer = [x[3] for x in position_data]
     vertNormBuff = [x[0:3] for x in normal_data]
     clothStuff4Buffer = [x[3] for x in normal_data]
     clothStuff5Buffer = [x for x in submesh['vb'] if x['SemanticName'] == 'COLOR' and int(x['SemanticIndex']) != 0][0]['Buffer']
-    colorBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'COLOR' and int(x['SemanticIndex']) == 0][0]['Buffer']
+    #colorBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'COLOR' and int(x['SemanticIndex']) == 0][0]['Buffer']
     clothStuff2Buffer = [x for x in submesh['vb'] if x['SemanticName'] == 'TEXCOORD' and int(x['SemanticIndex']) > 2][0]['Buffer'] #Not really sure about this one
-    tangentBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'TANGENT'][0]['Buffer']
+    #tangentBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'TANGENT'][0]['Buffer']
     binormalBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'BINORMAL'][0]['Buffer']
     fogBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'FOG'][0]['Buffer']
     clothStuff1Buffer = [x for x in submesh['vb'] if x['SemanticName'] == 'PSIZE'][0]['Buffer']
@@ -858,8 +860,6 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
             c += computeCenterOfMass(position, binormalBuffer[i], fogBuffer[i], nunoMap, nun_transform_info) * skinWeightList[i][2]
             c += computeCenterOfMass(position, binormalBuffer[i], clothStuff2Buffer[i], nunoMap, nun_transform_info) * skinWeightList[i][3]
             vertPosBuff.append((numpy.cross(b,c) * clothStuff4Buffer[i] + a).tolist())
-    new_fmt = copy.deepcopy(submesh['fmt'])
-    new_vb = copy.deepcopy(submesh['vb'])
     #Position
     original_pos_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'POSITION'][0]['id'])
     new_pos_fmt = len(new_fmt['elements'])
@@ -898,13 +898,12 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
         return({'fmt': new_fmt, 'ib': submesh['ib'], 'vb': new_vb, 'vgmap': submesh['vgmap']})
 
 def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True):
-    fmts = generate_fmts(model_mesh_metadata)
     driverMesh_fmt = make_drivermesh_fmt()
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     lod_data = [x for x in model_mesh_metadata["sections"] if x['type'] == 'MESH_LOD'][0]
     for subindex in range(len(subvbs['data'])):
         submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata,\
-            skel_data, fmts, e=e, cull_vertices = cull_vertices)
+            skel_data, fmts = generate_fmts(model_mesh_metadata), e=e, cull_vertices = cull_vertices)
         write_fmt(submesh['fmt'],'{0}{1}.fmt'.format(path, subindex))
         write_ib(submesh['ib'],'{0}{1}.ib'.format(path, subindex), submesh['fmt'])
         write_vb(submesh['vb'],'{0}{1}.vb'.format(path, subindex), submesh['fmt'])
@@ -917,7 +916,7 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
             transformed_submesh = render_cloth_submesh(submesh, NUNID, skel_data, nun_maps, e=e)
             write_fmt(transformed_submesh['fmt'],'{0}{1}_transformed.fmt'.format(path, subindex))
             write_ib(transformed_submesh['ib'],'{0}{1}_transformed.ib'.format(path, subindex), transformed_submesh['fmt'])
-            write_vb(transformed_submesh['vb'],'{0}{1}_transformed.vb'.format(path, subindex), transformed_submesh['fmt'])          
+            write_vb(transformed_submesh['vb'],'{0}{1}_transformed.vb'.format(path, subindex), transformed_submesh['fmt'])
             if not transformed_submesh["vgmap"] == False:
                 with open('{0}{1}_transformed.vgmap'.format(path, subindex), 'wb') as f:
                     f.write(json.dumps(transformed_submesh['vgmap'], indent=4).encode("utf-8"))
@@ -989,7 +988,7 @@ def get_ext_skeleton(g1m_name):
             g1m_file_choice = -1
             while (g1m_file_choice < 0) or (g1m_file_choice >= len(g1m_files) + 1):
                 try:
-                    g1m_file_choice = int(input("\nPlease enter which g1m file to use:  ")) - 1 
+                    g1m_file_choice = int(input("\nPlease enter which g1m file to use:  ")) - 1
                 except ValueError:
                     pass
             if g1m_file_choice in range(len(g1m_files)):
@@ -1117,7 +1116,7 @@ if __name__ == "__main__":
                     g1m_file_choice = -1
                     while (g1m_file_choice < 0) or (g1m_file_choice >= len(g1m_files)):
                         try:
-                            g1m_file_choice = int(input("\nPlease enter which g1m file to use:  ")) - 1 
+                            g1m_file_choice = int(input("\nPlease enter which g1m file to use:  ")) - 1
                         except ValueError:
                             pass
                     if g1m_file_choice in range(len(g1m_files)):
