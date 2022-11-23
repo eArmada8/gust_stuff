@@ -870,6 +870,7 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<'):
     new_pos_fmt = len(new_fmt['elements'])
     new_fmt['elements'].append(copy.deepcopy(new_fmt['elements'][original_pos_fmt]))
     new_fmt['elements'][original_pos_fmt]['SemanticName'] = '4D_POSITION'
+    new_fmt['elements'][new_pos_fmt]['id'] = str(new_pos_fmt)
     new_fmt['elements'][new_pos_fmt]['Format'] = "R32G32B32_FLOAT"
     new_fmt['elements'][new_pos_fmt]['AlignedByteOffset'] = copy.deepcopy(new_fmt['stride'])
     new_fmt['stride'] = str(int(new_fmt['stride']) + 12)
@@ -879,6 +880,7 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<'):
     new_nml_fmt = len(new_fmt['elements'])
     new_fmt['elements'].append(copy.deepcopy(new_fmt['elements'][original_nml_fmt]))
     new_fmt['elements'][original_nml_fmt]['SemanticName'] = '4D_NORMAL'
+    new_fmt['elements'][new_nml_fmt]['id'] = str(new_nml_fmt)
     new_fmt['elements'][new_nml_fmt]['Format'] = "R32G32B32_FLOAT"
     new_fmt['elements'][new_nml_fmt]['AlignedByteOffset'] = copy.deepcopy(new_fmt['stride'])
     new_fmt['stride'] = str(int(new_fmt['stride']) + 12)
