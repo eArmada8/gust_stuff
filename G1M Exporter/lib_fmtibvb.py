@@ -109,6 +109,19 @@ def pack_dxgi_vector(f, data, stride, dxgi_format, e = '<'):
         write = f.write(data)
     return
 
+def get_stride_from_dxgi_format(dxgi_format):
+    dxgi_format = dxgi_format.split('DXGI_FORMAT_')[-1]
+    dxgi_format_split = dxgi_format.split('_')
+    if len(dxgi_format_split) == 2:
+        numtype = dxgi_format_split[1]
+        vec_format = re.findall("[0-9]+",dxgi_format_split[0])
+        if len(vec_format) > 0:
+            return(int(len(vec_format) * int(vec_format[0]) / 8))
+        else:
+            return False
+    else:
+        return False
+
 def read_fmt(fmt_filename):
     fmt_struct = {}
     with open(fmt_filename, 'r') as f:
