@@ -152,15 +152,15 @@ def parseNUNO1(chunkVersion, f, e):
     nuno1_block['parentBoneID'] = None
     # Not sure if it should just be nuno1_block['parentBoneID'], = struct.unpack(e+"I",f.read(4))
     # instead of the next 2 lines
-    a,b = struct.unpack("<HH", f.read(4))
+    a,b = struct.unpack(e+"HH", f.read(4))
     nuno1_block['parentBoneID'] = a if e == '<' else b
     controlPointCount, = struct.unpack(e+"I", f.read(4))
     unknownSectionCount, = struct.unpack(e+"I", f.read(4))
-    skip1, = struct.unpack(e+"i", f.read(4))
-    skip2, = struct.unpack(e+"i", f.read(4))
-    skip3, = struct.unpack(e+"i", f.read(4))
+    skip1, = struct.unpack(e+"I", f.read(4))
+    skip2, = struct.unpack(e+"I", f.read(4))
+    skip3, = struct.unpack(e+"I", f.read(4))
     f.read(0x3C)
-    if chunkVersion < 0x30303233:       
+    if chunkVersion > 0x30303233:       
         f.read(0x10)
     if chunkVersion >= 0x30303235:
         f.read(0x10)
@@ -176,7 +176,7 @@ def parseNUNO1(chunkVersion, f, e):
     f.seek(48 * unknownSectionCount,1)
     f.seek(4 * skip1,1)
     f.seek(4 * skip2,1)
-    f.seek(4 * skip4,1)
+    f.seek(4 * skip3,1)
     return(nuno1_block)
 
 def parseNUNO2(chunkVersion, f, e):
@@ -243,7 +243,7 @@ def parseNUNV1(chunkVersion, f, e):
     controlPointCount, = struct.unpack(e+"I", f.read(4))
     unknownSectionCount, = struct.unpack(e+"I", f.read(4))
     skip1, = struct.unpack(e+"i", f.read(4))
-    f.read(54)
+    f.read(0x54)
     if chunkVersion >= 0x30303131:       
         f.read(0x10)
     nunv1_block['controlPoints'] = []
@@ -268,12 +268,7 @@ def parseNUNS1(chunkVersion, f, e):
     a,b = struct.unpack("<HH", f.read(4))
     nuns1_block['parentBoneID'] = a if e == '<' else b
     controlPointCount, = struct.unpack(e+"I", f.read(4))
-    unk1, = struct.unpack(e+"I", f.read(4))
-    unk2, = struct.unpack(e+"I", f.read(4))
-    unk3, = struct.unpack(e+"I", f.read(4))
-    unk4, = struct.unpack(e+"I", f.read(4))
-    skip1, = struct.unpack(e+"I", f.read(4))
-    f.read(0xA4)
+    f.read(0xB8)
     for i in range(controlPointCount):
         nuns1_block['controlPoints'].append(struct.unpack("ffff", f.read(16)))
     nuns1_block['influences'] = []
