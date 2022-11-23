@@ -174,7 +174,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, e = 
                     skip_weights = True # Certain models do not have weights at all
                 gltf_fmt = convert_fmt_for_gltf(submesh['fmt'])
                 vb_stream = io.BytesIO()
-                write_vb_stream(submesh['vb'], vb_stream, gltf_fmt, e=e, stripe = False)
+                write_vb_stream(submesh['vb'], vb_stream, gltf_fmt, e=e, interleave = False)
                 block_offset = len(giant_buffer)
                 for element in range(len(gltf_fmt['elements'])):
                     primitive["attributes"][gltf_fmt['elements'][element]['SemanticName']]\
