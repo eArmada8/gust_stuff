@@ -822,7 +822,7 @@ def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts
         submesh["vgmap"] = False # G1M uses external skeleton that isn't available
     return(submesh)
 
-def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<'):
+def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', remove_physics = False):
     position_data = [x for x in submesh['vb'] if x['SemanticName'] == 'POSITION'][0]['Buffer']
     BlendIndicesList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDINDICES'][0]['Buffer']
     skinWeightList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDWEIGHT'][0]['Buffer']
@@ -885,7 +885,22 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<'):
     new_fmt['elements'][new_nml_fmt]['AlignedByteOffset'] = copy.deepcopy(new_fmt['stride'])
     new_fmt['stride'] = str(int(new_fmt['stride']) + 12)
     new_vb.append({'SemanticName': 'NORMAL', 'SemanticIndex': '0', 'Buffer': vertNormBuff})
-    return({'fmt': new_fmt, 'ib': submesh['ib'], 'vb': new_vb, 'vgmap': submesh['vgmap']})
+    if remove_physics == True:
+        semantics_to_keep = ['POSITION', 'BLENDWEIGHT', 'BLENDINDICES', 'NORMAL', 'COLOR', 'TEXCOORD', 'TANGENT']
+        simple_fmt = {'stride': '0', 'topology': new_fmt['topology'], 'format': new_fmt['format'], 'elements': []}
+        simple_vb = []
+        offset = 0
+        for i in range(len(new_fmt['elements'])):
+            if (new_fmt['elements'][i]['SemanticName'] in semantics_to_keep) and (new_fmt['elements'][i]['SemanticIndex'] == '0'):
+                simple_fmt['elements'].append(copy.deepcopy(new_fmt['elements'][i]))
+                simple_vb.append(copy.deepcopy(new_vb[i]))
+                simple_fmt['elements'][-1]['id'] = str(len(simple_fmt['elements']) - 1)
+                simple_fmt['elements'][-1]['AlignedByteOffset'] = str(offset)
+                offset += get_stride_from_dxgi_format(simple_fmt['elements'][-1]['Format'])
+        simple_fmt['stride'] = str(offset)
+        return({'fmt': simple_fmt, 'ib': submesh['ib'], 'vb': simple_vb, 'vgmap': submesh['vgmap']})
+    else:
+        return({'fmt': new_fmt, 'ib': submesh['ib'], 'vb': new_vb, 'vgmap': submesh['vgmap']})
 
 def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True):
     fmts = generate_fmts(model_mesh_metadata)
