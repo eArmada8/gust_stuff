@@ -866,29 +866,23 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<'):
     new_fmt = copy.deepcopy(submesh['fmt'])
     new_vb = copy.deepcopy(submesh['vb'])
     #Position
-    element_no = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'POSITION'][0]['id'])
-    current_offset = int(new_fmt['elements'][element_no]['AlignedByteOffset'])
-    vec_bits = int(re.findall("[0-9]+",new_fmt['elements'][element_no]['Format'])[0])
-    new_pos_stride = int(3 * vec_bits / 8)
-    new_fmt['elements'][element_no]['Format'] = "R{0}G{0}B{0}_FLOAT".format(vec_bits)
-    if element_no < (len(new_fmt['elements']) - 1):
-        offset_change = new_pos_stride - (int(new_fmt['elements'][element_no+1]['AlignedByteOffset']) - int(new_fmt['elements'][element_no]['AlignedByteOffset']))
-    for i in range(element_no + 1, len(new_fmt['elements'])):
-        new_fmt['elements'][i]['AlignedByteOffset'] = str(int(new_fmt['elements'][i]['AlignedByteOffset']) + offset_change)
-    new_fmt['stride'] = str(int(new_fmt['stride']) + offset_change)
-    new_vb[element_no]['Buffer'] = vertPosBuff
+    original_pos_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'POSITION'][0]['id'])
+    new_pos_fmt = len(new_fmt['elements'])
+    new_fmt['elements'].append(copy.deepcopy(new_fmt['elements'][original_pos_fmt]))
+    new_fmt['elements'][original_pos_fmt]['SemanticName'] = '4D_POSITION'
+    new_fmt['elements'][new_pos_fmt]['Format'] = "R32G32B32_FLOAT"
+    new_fmt['elements'][new_pos_fmt]['AlignedByteOffset'] = copy.deepcopy(new_fmt['stride'])
+    new_fmt['stride'] = str(int(new_fmt['stride']) + 12)
+    new_vb.append({'SemanticName': 'POSITION', 'SemanticIndex': '0', 'Buffer': vertPosBuff})
     #Normal
-    element_no = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'NORMAL'][0]['id'])
-    current_offset = int(new_fmt['elements'][element_no]['AlignedByteOffset'])
-    vec_bits = int(re.findall("[0-9]+",new_fmt['elements'][element_no]['Format'])[0])
-    new_pos_stride = int(3 * vec_bits / 8)
-    new_fmt['elements'][element_no]['Format'] = "R{0}G{0}B{0}_FLOAT".format(vec_bits)
-    if element_no < (len(new_fmt['elements']) - 1):
-        offset_change = new_pos_stride - (int(new_fmt['elements'][element_no+1]['AlignedByteOffset']) - int(new_fmt['elements'][element_no]['AlignedByteOffset']))
-    for i in range(element_no + 1, len(new_fmt['elements'])):
-        new_fmt['elements'][i]['AlignedByteOffset'] = str(int(new_fmt['elements'][i]['AlignedByteOffset']) + offset_change)
-    new_fmt['stride'] = str(int(new_fmt['stride']) + offset_change)
-    new_vb[element_no]['Buffer'] = vertNormBuff
+    original_nml_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'NORMAL'][0]['id'])
+    new_nml_fmt = len(new_fmt['elements'])
+    new_fmt['elements'].append(copy.deepcopy(new_fmt['elements'][original_nml_fmt]))
+    new_fmt['elements'][original_nml_fmt]['SemanticName'] = '4D_NORMAL'
+    new_fmt['elements'][new_nml_fmt]['Format'] = "R32G32B32_FLOAT"
+    new_fmt['elements'][new_nml_fmt]['AlignedByteOffset'] = copy.deepcopy(new_fmt['stride'])
+    new_fmt['stride'] = str(int(new_fmt['stride']) + 12)
+    new_vb.append({'SemanticName': 'NORMAL', 'SemanticIndex': '0', 'Buffer': vertNormBuff})
     return({'fmt': new_fmt, 'ib': submesh['ib'], 'vb': new_vb, 'vgmap': submesh['vgmap']})
 
 def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True):
