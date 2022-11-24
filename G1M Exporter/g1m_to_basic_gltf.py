@@ -131,6 +131,11 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
     # Trying to detect if the external skeleton is missing
     skel_present = model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] == -2147483648
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
+    nun_indices = [x['name'][0:4] for x in nun_maps['nun_data']]
+    if 'nunv' in nun_indices:
+        nunv_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nunv')
+    if 'nuns' in nun_indices:
+        nuns_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nuns')
     lod_data = [x for x in model_mesh_metadata["sections"] if x['type'] == 'MESH_LOD'][0]
     fmts = generate_fmts(model_mesh_metadata)
     gltf_data = {}
@@ -173,7 +178,10 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
             fmts = generate_fmts(model_mesh_metadata) # Refresh FMT every time, to dereference
             submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata, model_skel_data, fmts, e=e, cull_vertices = True)
             if submesh_lod['clothID'] == 1 and not nun_maps == False:
-                NUNID = submesh_lod['NUNID'] % 10000
+                if (submesh_lod['NUNID']) >= 10000 and (submesh_lod['NUNID'] < 20000):
+                    NUNID = (submesh_lod['NUNID'] % 10000) + nunv_offset
+                else:
+                    NUNID = submesh_lod['NUNID'] % 10000
                 submesh = render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e=e, remove_physics = True)
             # Skip empty submeshes
             if len(submesh['ib']) > 0:
@@ -335,6 +343,7 @@ def G1M2glTF(g1m_name, overwrite = False):
         if len(nun_struct) > 0:
             nun_data = stack_nun(nun_struct)
             nun_maps = calc_nun_maps(nun_data, model_skel_data)
+            nun_maps['nun_data'] = nun_data
         if os.path.exists(g1m_name + '.gltf') and (overwrite == False):
             if str(input(g1m_name + ".gltf exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
                 overwrite = True
