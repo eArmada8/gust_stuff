@@ -136,6 +136,13 @@ def fix_weight_groups(submesh):
             new_submesh['vb'][bone_element_index]['Buffer'][i] = [0 for x in new_submesh['vb'][bone_element_index]['Buffer'][i]]
     return(new_submesh)
 
+def fix_tangent_length(submesh):
+    tangent_element_index = int([x for x in submesh['fmt']['elements'] if x['SemanticName'] == 'TANGENT'][0]['id'])
+    for i in range(len(submesh['vb'][tangent_element_index]['Buffer'])):
+        submesh['vb'][tangent_element_index]['Buffer'][i][0:3] =\
+            (submesh['vb'][tangent_element_index]['Buffer'][i][0:3] / numpy.linalg.norm(submesh['vb'][tangent_element_index]['Buffer'][i][0:3])).tolist()
+    return(submesh)
+
 def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_maps, e = '<'):
     # Trying to detect if the external skeleton is missing
     skel_present = model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] == -2147483648
@@ -200,6 +207,8 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
                     submesh = fix_weight_groups(submesh)
                 except:
                     skip_weights = True # Certain models do not have weights at all
+                if not submesh_lod['clothID'] == 0:
+                    submesh = fix_tangent_length(submesh) # Needed for cloth meshes, I have no idea why
                 gltf_fmt = convert_fmt_for_gltf(submesh['fmt'])
                 vb_stream = io.BytesIO()
                 write_vb_stream(submesh['vb'], vb_stream, gltf_fmt, e=e, interleave = False)
