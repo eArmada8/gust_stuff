@@ -87,7 +87,7 @@ def convert_bones_to_single_file(submesh):
     for i in range(len(submesh['vb'][bone_element_index]['Buffer'])):
         for j in range(len(submesh['vb'][bone_element_index]['Buffer'][i])):
             submesh['vb'][bone_element_index]['Buffer'][i][j] = \
-                int(submesh['vb'][bone_element_index]['Buffer'][i][j] / 3) # Dunno why G1M indices count by 3
+                int(submesh['vb'][bone_element_index]['Buffer'][i][j] // 3) # Dunno why G1M indices count by 3, I think it's for NUN?
     return(submesh)
 
 def list_of_utilized_bones(submesh, model_skel_data):
@@ -105,8 +105,6 @@ def expand_weight_groups_as_needed(submesh):
         for i in range(len(new_submesh['vb'][bone_element_index]['Buffer'][0]) - len(new_submesh['vb'][weight_element_index]['Buffer'][0])):
             for j in range(len(new_submesh['vb'][weight_element_index]['Buffer'])):
                 new_submesh['vb'][weight_element_index]['Buffer'][j].append(1-sum(new_submesh['vb'][weight_element_index]['Buffer'][j]))
-                if (new_submesh['vb'][weight_element_index]['Buffer'][j][-1] < 0.00001):
-                    new_submesh['vb'][weight_element_index]['Buffer'][j][-1] = 0
             prefices = ['R','G','B','A','D']
             weightformat = new_submesh['fmt']['elements'][weight_element_index]['Format']
             dxgi_format_split = weightformat.split('_')
@@ -123,12 +121,17 @@ def expand_weight_groups_as_needed(submesh):
             for j in range(weight_element_index+1, len(new_submesh['fmt']['elements'])):
                 new_submesh['fmt']['elements'][j]['AlignedByteOffset'] =\
                     str(int(int(new_submesh['fmt']['elements'][j]['AlignedByteOffset']) + vec_bits / 8))
+    for i in range(len(new_submesh['vb'][weight_element_index]['Buffer'])):
+        for j in range(len(new_submesh['vb'][weight_element_index]['Buffer'][i])):
+            if (new_submesh['vb'][weight_element_index]['Buffer'][i][j] < 0.00001):
+                new_submesh['vb'][weight_element_index]['Buffer'][i][j] = 0
     return(new_submesh)
 
-def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, e = '<'):
+def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_maps, e = '<'):
     # Trying to detect if the external skeleton is missing
     skel_present = model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] == -2147483648
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
+    lod_data = [x for x in model_mesh_metadata["sections"] if x['type'] == 'MESH_LOD'][0]
     fmts = generate_fmts(model_mesh_metadata)
     gltf_data = {}
     gltf_data['asset'] = { 'version': '2.0' }
@@ -145,33 +148,44 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, e = 
     mesh_nodes = []
     buffer_view = 0
     for i in range(len(model_skel_data['boneList'])):
-        node = {'children': [], 'name': model_skel_data['boneList'][i]['bone_id']}
-        if not list(model_skel_data['boneList'][i]['rotation_q']) == [0,0,0,1]:
-            node['rotation'] = model_skel_data['boneList'][i]['rotation_q']
-        if not list(model_skel_data['boneList'][i]['scale']) == [1,1,1]:
-            node['scale'] = model_skel_data['boneList'][i]['scale']
-        if not list(model_skel_data['boneList'][i]['pos_xyz']) == [0,0,0]:
-            node['translation'] = model_skel_data['boneList'][i]['pos_xyz']
-        if i > 0:
-            gltf_data['nodes'][model_skel_data['boneList'][i]['parentID']]['children'].append(len(gltf_data['nodes']))
-        gltf_data['nodes'].append(node)
+        try: # NUN bones should be skipped
+            node = {'children': [], 'name': model_skel_data['boneList'][i]['bone_id']}
+            if not list(model_skel_data['boneList'][i]['rotation_q']) == [0,0,0,1]:
+                node['rotation'] = model_skel_data['boneList'][i]['rotation_q']
+            if not list(model_skel_data['boneList'][i]['scale']) == [1,1,1]:
+                node['scale'] = model_skel_data['boneList'][i]['scale']
+            if not list(model_skel_data['boneList'][i]['pos_xyz']) == [0,0,0]:
+                node['translation'] = model_skel_data['boneList'][i]['pos_xyz']
+            if i > 0:
+                gltf_data['nodes'][model_skel_data['boneList'][i]['parentID']]['children'].append(len(gltf_data['nodes']))
+            gltf_data['nodes'].append(node)
+        except:
+            pass
     for i in range(len(gltf_data['nodes'])):
         if len(gltf_data['nodes'][i]['children']) == 0:
             del(gltf_data['nodes'][i]['children'])
     for subindex in range(len(subvbs['data'])):
-        # Skip submesh if 4D
-        if len(re.findall('[0-9]+', [x for x in fmts[subvbs['data'][subindex]['vertexBufferIndex']]['elements'] if x['SemanticName'] == 'POSITION'][0]['Format'])) == 3:
+        # Skip submesh if 4D, unless NUN data is available
+        if (len(re.findall('[0-9]+', [x for x in fmts[subvbs['data'][subindex]['vertexBufferIndex']]['elements'] if x['SemanticName'] == 'POSITION'][0]['Format'])) == 3) \
+            or not nun_maps == False:
+            submesh_lod = [x for x in lod_data['data'][0]['lod'] if subindex in x['indices']][0]
             primitive = {"attributes":{}}
             fmts = generate_fmts(model_mesh_metadata) # Refresh FMT every time, to dereference
             submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata, model_skel_data, fmts, e=e, cull_vertices = True)
+            if submesh_lod['clothID'] == 1 and not nun_maps == False:
+                NUNID = submesh_lod['NUNID'] % 10000
+                submesh = render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e=e, remove_physics = True)
             # Skip empty submeshes
             if len(submesh['ib']) > 0:
                 skip_weights = False
-                try:
-                    submesh = convert_bones_to_single_file(submesh)
-                    submesh = expand_weight_groups_as_needed(submesh)
-                except:
-                    skip_weights = True # Certain models do not have weights at all
+                if submesh_lod['clothID'] == 0:
+                    try:
+                        submesh = convert_bones_to_single_file(submesh)
+                        submesh = expand_weight_groups_as_needed(submesh)
+                    except:
+                        skip_weights = True # Certain models do not have weights at all
+                else:
+                    skip_weights = True # The weights for cloth meshes don't map to the skeleton in the same way
                 gltf_fmt = convert_fmt_for_gltf(submesh['fmt'])
                 vb_stream = io.BytesIO()
                 write_vb_stream(submesh['vb'], vb_stream, gltf_fmt, e=e, interleave = False)
@@ -264,6 +278,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, e = 
 def G1M2glTF(g1m_name, overwrite = False):
     with open(g1m_name + '.g1m', "rb") as f:
         file = {}
+        nun_struct = {}
         file["file_magic"], = struct.unpack(">I", f.read(4))
         if file["file_magic"] == 0x5F4D3147:
             e = '<' # Little Endian
@@ -300,6 +315,15 @@ def G1M2glTF(g1m_name, overwrite = False):
                     if not ext_skel == False:
                         model_skel_data = combine_skeleton(ext_skel, model_skel_data)
                 have_skeleton == True # I guess some games duplicate this section?
+            elif chunk["magic"] in ['NUNO', 'ONUN']: # NUNO
+                f.seek(chunk["start_offset"],0)
+                nun_struct["nuno"] = parseNUNO(f.read(chunk["size"]),e)
+            elif chunk["magic"] in ['NUNV', 'VNUN']: # NUNV
+                f.seek(chunk["start_offset"],0)
+                nun_struct["nunv"] = parseNUNV(f.read(chunk["size"]),e)
+            elif chunk["magic"] in ['NUNS', 'SNUN']: # NUNS
+                f.seek(chunk["start_offset"],0)
+                nun_struct["nuns"] = parseNUNV(f.read(chunk["size"]),e)
             elif chunk["magic"] in ['G1MG', 'GM1G']:
                 f.seek(chunk["start_offset"],0)
                 g1mg_stream = f.read(chunk["size"])
@@ -307,11 +331,15 @@ def G1M2glTF(g1m_name, overwrite = False):
             else:
                 f.seek(chunk["start_offset"] + chunk["size"],0) # Move to next chunk
             file["chunks"] = chunks
+        nun_maps = False
+        if len(nun_struct) > 0:
+            nun_data = stack_nun(nun_struct)
+            nun_maps = calc_nun_maps(nun_data, model_skel_data)
         if os.path.exists(g1m_name + '.gltf') and (overwrite == False):
             if str(input(g1m_name + ".gltf exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
                 overwrite = True
         if (overwrite == True) or not os.path.exists(g1m_name + '.gltf'):
-            write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, e=e)
+            write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_maps, e=e)
     return(True)
 
 if __name__ == "__main__":
