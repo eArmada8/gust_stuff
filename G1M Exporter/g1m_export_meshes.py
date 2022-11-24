@@ -898,6 +898,11 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
         return({'fmt': new_fmt, 'ib': submesh['ib'], 'vb': new_vb, 'vgmap': submesh['vgmap']})
 
 def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True):
+    nun_indices = [x['name'][0:4] for x in nun_maps['nun_data']]
+    if 'nunv' in nun_indices:
+        nunv_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nunv')
+    if 'nuns' in nun_indices:
+        nuns_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nuns')
     driverMesh_fmt = make_drivermesh_fmt()
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     lod_data = [x for x in model_mesh_metadata["sections"] if x['type'] == 'MESH_LOD'][0]
@@ -912,7 +917,10 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
                 f.write(json.dumps(submesh['vgmap'], indent=4).encode("utf-8"))
         submesh_lod = [x for x in lod_data['data'][0]['lod'] if subindex in x['indices']][0]
         if submesh_lod['clothID'] == 1 and not nun_maps == False:
-            NUNID = submesh_lod['NUNID'] % 10000
+            if (submesh_lod['NUNID']) >= 10000 and (submesh_lod['NUNID'] < 20000):
+                NUNID = (submesh_lod['NUNID'] % 10000) + nunv_offset
+            else:
+                NUNID = submesh_lod['NUNID'] % 10000
             transformed_submesh = render_cloth_submesh(submesh, NUNID, skel_data, nun_maps, e=e)
             write_fmt(transformed_submesh['fmt'],'{0}{1}_transformed.fmt'.format(path, subindex))
             write_ib(transformed_submesh['ib'],'{0}{1}_transformed.ib'.format(path, subindex), transformed_submesh['fmt'])
@@ -1057,6 +1065,7 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
         if len(nun_struct) > 0:
             nun_data = stack_nun(nun_struct)
             nun_maps = calc_nun_maps(nun_data, model_skel_data)
+            nun_maps['nun_data'] = nun_data
         if os.path.exists(g1m_name) and (os.path.isdir(g1m_name)) and (overwrite == False):
             if str(input(g1m_name + " folder exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
                 overwrite = True
