@@ -97,10 +97,12 @@ def list_of_utilized_bones(submesh, model_skel_data):
             true_bone_map[model_skel_data['boneList'][i]['bone_id']] = model_skel_data['boneList'][i]['i']
     return([true_bone_map[x] for x in submesh['vgmap'].keys()])
 
-def expand_weight_groups_as_needed(submesh):
+def fix_weight_groups(submesh):
+    # Avoid some strange behavior from variable assignment, will copy instead
     new_submesh = copy.deepcopy(submesh)
     bone_element_index = int([x for x in new_submesh['fmt']['elements'] if x['SemanticName'] == 'BLENDINDICES'][0]['id'])
     weight_element_index = int([x for x in new_submesh['fmt']['elements'] if x['SemanticName'] == 'BLENDWEIGHT'][0]['id'])
+    # If the final weight group is missing, re-insert it
     if len(new_submesh['vb'][bone_element_index]['Buffer'][0]) - len(new_submesh['vb'][weight_element_index]['Buffer'][0]) > 0:
         for i in range(len(new_submesh['vb'][bone_element_index]['Buffer'][0]) - len(new_submesh['vb'][weight_element_index]['Buffer'][0])):
             for j in range(len(new_submesh['vb'][weight_element_index]['Buffer'])):
@@ -121,10 +123,17 @@ def expand_weight_groups_as_needed(submesh):
             for j in range(weight_element_index+1, len(new_submesh['fmt']['elements'])):
                 new_submesh['fmt']['elements'][j]['AlignedByteOffset'] =\
                     str(int(int(new_submesh['fmt']['elements'][j]['AlignedByteOffset']) + vec_bits / 8))
+    # Remove invalid weight numbers (<0.00001 and negative numbers)
     for i in range(len(new_submesh['vb'][weight_element_index]['Buffer'])):
         for j in range(len(new_submesh['vb'][weight_element_index]['Buffer'][i])):
             if (new_submesh['vb'][weight_element_index]['Buffer'][i][j] < 0.00001):
                 new_submesh['vb'][weight_element_index]['Buffer'][i][j] = 0
+    # Remove cloth weights from 4D meshes
+    for i in range(len(new_submesh['vb'][weight_element_index]['Buffer'])):
+        # Hopefully this correctly detects 4D weight groups
+        if not new_submesh['vb'][weight_element_index]['Buffer'][i][0] == max(new_submesh['vb'][weight_element_index]['Buffer'][i]):
+            new_submesh['vb'][weight_element_index]['Buffer'][i] = [1]+[0 for x in new_submesh['vb'][weight_element_index]['Buffer'][i][1:]]
+            new_submesh['vb'][bone_element_index]['Buffer'][i] = [0 for x in new_submesh['vb'][bone_element_index]['Buffer'][i]]
     return(new_submesh)
 
 def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_maps, e = '<'):
@@ -186,14 +195,11 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
             # Skip empty submeshes
             if len(submesh['ib']) > 0:
                 skip_weights = False
-                if submesh_lod['clothID'] == 0:
-                    try:
-                        submesh = convert_bones_to_single_file(submesh)
-                        submesh = expand_weight_groups_as_needed(submesh)
-                    except:
-                        skip_weights = True # Certain models do not have weights at all
-                else:
-                    skip_weights = True # The weights for cloth meshes don't map to the skeleton in the same way
+                try:
+                    submesh = convert_bones_to_single_file(submesh)
+                    submesh = fix_weight_groups(submesh)
+                except:
+                    skip_weights = True # Certain models do not have weights at all
                 gltf_fmt = convert_fmt_for_gltf(submesh['fmt'])
                 vb_stream = io.BytesIO()
                 write_vb_stream(submesh['vb'], vb_stream, gltf_fmt, e=e, interleave = False)
