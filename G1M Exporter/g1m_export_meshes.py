@@ -417,16 +417,6 @@ def calc_nun_maps(nun_data, skel_data):
                     pIDinv_pos_xyz = numpy.linalg.inv(tm_temp)[0:3,3] # Read 4th column after inversion
                     temp_p = (numpy.array(Quaternion(parentID_bone['abs_q']).inverse.rotate(parent_bone['abs_p'])) + pIDinv_pos_xyz).tolist()
                     pos_xyz = (numpy.array(q_wxyz.rotate(p)) + temp_p).tolist()
-                    if (i==1 and pointIndex==2):
-                        write_struct_to_json({'pointIndex': pointIndex,\
-                        'parentID': parentID,\
-                        'parent_bone': parent_bone,\
-                        'parentID_bone': parentID_bone,\
-                        'q_wxyz': list(q_wxyz),\
-                        'pIDinv_pos_xyz': pIDinv_pos_xyz.tolist(),\
-                        'temp_p': temp_p,\
-                        'pos_xyz': pos_xyz\
-                        }, 'temp')
                 bone = {}
                 bone['i'] = len(skel_data['boneList'])
                 bone['bone_id'] = nun_data[0]['name'] + 'bone_p' + str(parentBone) + "_" + str(len(skel_data['boneList']))
