@@ -147,11 +147,12 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
     # Trying to detect if the external skeleton is missing
     skel_present = model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] == -2147483648
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
-    nun_indices = [x['name'][0:4] for x in nun_maps['nun_data']]
-    if 'nunv' in nun_indices:
-        nunv_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nunv')
-    if 'nuns' in nun_indices:
-        nuns_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nuns')
+    if not nun_maps == False:
+        nun_indices = [x['name'][0:4] for x in nun_maps['nun_data']]
+        if 'nunv' in nun_indices:
+            nunv_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nunv')
+        if 'nuns' in nun_indices:
+            nuns_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nuns')
     lod_data = [x for x in model_mesh_metadata["sections"] if x['type'] == 'MESH_LOD'][0]
     fmts = generate_fmts(model_mesh_metadata)
     gltf_data = {}
