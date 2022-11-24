@@ -898,11 +898,12 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
         return({'fmt': new_fmt, 'ib': submesh['ib'], 'vb': new_vb, 'vgmap': submesh['vgmap']})
 
 def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True):
-    nun_indices = [x['name'][0:4] for x in nun_maps['nun_data']]
-    if 'nunv' in nun_indices:
-        nunv_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nunv')
-    if 'nuns' in nun_indices:
-        nuns_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nuns')
+    if not nun_maps == False:
+        nun_indices = [x['name'][0:4] for x in nun_maps['nun_data']]
+        if 'nunv' in nun_indices:
+            nunv_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nunv')
+        if 'nuns' in nun_indices:
+            nuns_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nuns')
     driverMesh_fmt = make_drivermesh_fmt()
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     lod_data = [x for x in model_mesh_metadata["sections"] if x['type'] == 'MESH_LOD'][0]
