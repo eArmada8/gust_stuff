@@ -22,6 +22,9 @@ import glob, os, io, sys, struct, copy, json, numpy
 from pyquaternion import Quaternion
 from lib_fmtibvb import *
 
+# This script transforms cloth meshes (aka 4D meshes) by default, change the following line to False to disable
+transform_cloth_mesh_default = False
+
 # From GitHub/uyjulian's ED9 MDL parser, thank you
 def read_pascal_string(f):
     sz = int.from_bytes(f.read(1), byteorder="little")
@@ -1109,7 +1112,7 @@ def get_ext_skeleton(g1m_name):
                 return False
 
 # The argument passed (g1m_name) is actually the folder name
-def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = True, transform_cloth = True):
+def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = True, transform_cloth = transform_cloth_mesh_default):
     with open(g1m_name + '.g1m', "rb") as f:
         print("Processing {0}...".format(g1m_name + '.g1m'))
         file = {}
@@ -1197,13 +1200,20 @@ if __name__ == "__main__":
         parser.add_argument('-n', '--no_buffers', help="Do not write fmt/ib/vb/vgmap files", action="store_false")
         parser.add_argument('-f', '--full_vertices',\
             help="Output full meshes instead of submeshs (identical to G1M tools)", action="store_false")
-        parser.add_argument('-s', '--skip_transform', help="Do not transform cloth meshes (4D->3D)", action="store_false")
+        if transform_cloth_mesh_default == True:
+            parser.add_argument('-s', '--skip_transform', help="Do not transform cloth meshes (4D->3D)", action="store_false")
+        else:
+            parser.add_argument('-t', '--transform', help="Transform cloth meshes (4D->3D)", action="store_true")
         parser.add_argument('g1m_filename', help="Name of g1m file to extract meshes / G1MG metadata (required).")
         args = parser.parse_args()
+        if transform_cloth_mesh_default == True:
+            transform_cloth = args.skip_transform
+        else:
+            transform_cloth = args.transform
         if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
             parseG1M(args.g1m_filename[:-4], overwrite = args.overwrite,\
                 write_buffers = args.no_buffers, cull_vertices = args.full_vertices,\
-                transform_cloth = args.skip_transform)
+                transform_cloth = transform_cloth)
     else:
         # When run without command line arguments, it will attempt to obtain data from all models
         models = []
