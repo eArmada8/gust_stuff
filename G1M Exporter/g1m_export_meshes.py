@@ -23,7 +23,7 @@ from pyquaternion import Quaternion
 from lib_fmtibvb import *
 
 # This script transforms cloth meshes (aka 4D meshes) by default, change the following line to False to disable
-transform_cloth_mesh_default = False
+transform_cloth_mesh_default = True
 
 # From GitHub/uyjulian's ED9 MDL parser, thank you
 def read_pascal_string(f):
