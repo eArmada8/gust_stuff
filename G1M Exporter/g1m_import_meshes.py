@@ -73,6 +73,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, e = '<')
             composite_ib = []
             vbsub_info = {}
             for j in range(len(existing_submeshes)):
+                print("Processing submesh {0}...".format(existing_submeshes[j]))
                 # Do not process submesh if it does not match the existing format (set by the first submesh)
                 if fmt == read_fmt("{0}/{1}.fmt".format(g1m_name, existing_submeshes[j])):
                     vb = read_vb("{0}/{1}.vb".format(g1m_name, existing_submeshes[j]), fmt)
@@ -353,6 +354,7 @@ def build_g1mg(g1m_name, e = '<'):
 def build_g1m(g1m_name):
     if os.path.exists(g1m_name) and (os.path.isdir(g1m_name)):
         with open(g1m_name + '.g1m', "rb") as f:
+            print("Processing {0}...".format(g1m_name))
             file = {}
             file["file_magic"], = struct.unpack(">I", f.read(4))
             if file["file_magic"] == 0x5F4D3147:
