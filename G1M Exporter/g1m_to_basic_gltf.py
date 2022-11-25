@@ -359,7 +359,7 @@ def G1M2glTF(g1m_name, overwrite = False):
                 f.seek(chunk["start_offset"] + chunk["size"],0) # Move to next chunk
             file["chunks"] = chunks
         nun_maps = False
-        if len(nun_struct) > 0:
+        if len(nun_struct) > 0 and model_skel_data['jointCount'] > 1:
             nun_data = stack_nun(nun_struct)
             nun_maps = calc_nun_maps(nun_data, model_skel_data)
             nun_maps['nun_data'] = nun_data
