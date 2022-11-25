@@ -811,26 +811,29 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
     new_fmt = copy.deepcopy(submesh['fmt'])
     new_vb = copy.deepcopy(submesh['vb'])
     position_data = [x for x in submesh['vb'] if x['SemanticName'] == 'POSITION'][0]['Buffer']
-    normal_data = copy.deepcopy([x for x in submesh['vb'] if x['SemanticName'] == 'NORMAL'][0]['Buffer'])
+    normal_data = [x for x in submesh['vb'] if x['SemanticName'] == 'NORMAL'][0]['Buffer']
     BlendIndicesList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDINDICES'][0]['Buffer']
     skinWeightList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDWEIGHT'][0]['Buffer']
     nunoMap = nun_maps['clothMap'][NUNID]
     clothParentBone = [x for x in model_skel_data['boneList'] if x['i'] == nun_maps['clothParentIDMap'][NUNID]][0]
+    clothStuff1Buffer = [x for x in submesh['vb'] if x['SemanticName'] == 'PSIZE'][0]['Buffer']
+    clothStuff2Buffer = [x for x in submesh['vb'] if x['SemanticName'] == 'TEXCOORD' and int(x['SemanticIndex']) > 2][0]['Buffer'] #Not really sure about this one
     #clothStuff3Buffer = [x[3] for x in position_data]
-    vertNormBuff = [x[0:3] for x in normal_data]
     clothStuff4Buffer = [x[3] for x in normal_data]
     clothStuff5Buffer = [x for x in submesh['vb'] if x['SemanticName'] == 'COLOR' and int(x['SemanticIndex']) != 0][0]['Buffer']
     #colorBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'COLOR' and int(x['SemanticIndex']) == 0][0]['Buffer']
-    clothStuff2Buffer = [x for x in submesh['vb'] if x['SemanticName'] == 'TEXCOORD' and int(x['SemanticIndex']) > 2][0]['Buffer'] #Not really sure about this one
-    #tangentBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'TANGENT'][0]['Buffer']
+    tangent_data = [x for x in submesh['vb'] if x['SemanticName'] == 'TANGENT'][0]['Buffer']
     binormalBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'BINORMAL'][0]['Buffer']
     fogBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'FOG'][0]['Buffer']
-    clothStuff1Buffer = [x for x in submesh['vb'] if x['SemanticName'] == 'PSIZE'][0]['Buffer']
     vertPosBuff = []
+    vertNormBuff = []
+    tangentBuffer = []
     nun_transform_info = nun_maps['driverMeshList'][NUNID]['transform_info'] # NUN Bones
     for i in range(len(position_data)):
         if binormalBuffer[i] == [0,0,0,0]:
             vertPosBuff.append((Quaternion(clothParentBone['abs_q']).rotate(position_data[i][0:3]) + numpy.array(clothParentBone['abs_p'])).tolist())
+            vertNormBuff.append(normal_data[i])
+            tangentBuffer.append(tangent_data[i])
         else:
             clothPosition = position_data[i]
             position = [0,0,0]
@@ -849,7 +852,13 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
             c += computeCenterOfMass(position, binormalBuffer[i], clothStuff1Buffer[i], nunoMap, nun_transform_info) * skinWeightList[i][1]
             c += computeCenterOfMass(position, binormalBuffer[i], fogBuffer[i], nunoMap, nun_transform_info) * skinWeightList[i][2]
             c += computeCenterOfMass(position, binormalBuffer[i], clothStuff2Buffer[i], nunoMap, nun_transform_info) * skinWeightList[i][3]
-            vertPosBuff.append((numpy.cross(b,c) * clothStuff4Buffer[i] + a).tolist())
+            d = numpy.cross(b,c)
+            vertNormBuff.append(b * normal_data[i][1] + c * normal_data[i][0] + d * normal_data[i][2])
+            vertNormBuff[-1] = (vertNormBuff[-1] / numpy.linalg.norm(vertNormBuff[-1])).tolist()
+            tangentBuffer.append(b * tangent_data[i][1] + c * tangent_data[i][0] + d * tangent_data[i][2])
+            tangentBuffer[-1] = (tangentBuffer[-1] / numpy.linalg.norm(tangentBuffer[-1])).tolist() + [tangent_data[i][3]]
+            # if NUNO5 d = (d / numpy.linalg.norm(d)) ?
+            vertPosBuff.append((d * clothStuff4Buffer[i] + a).tolist())
     #Position
     original_pos_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'POSITION'][0]['id'])
     new_pos_fmt = len(new_fmt['elements'])
@@ -870,6 +879,16 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
     new_fmt['elements'][new_nml_fmt]['AlignedByteOffset'] = copy.deepcopy(new_fmt['stride'])
     new_fmt['stride'] = str(int(new_fmt['stride']) + 12)
     new_vb.append({'SemanticName': 'NORMAL', 'SemanticIndex': '0', 'Buffer': vertNormBuff})
+    #Tangent
+    original_tng_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'TANGENT'][0]['id'])
+    new_tng_fmt = len(new_fmt['elements'])
+    new_fmt['elements'].append(copy.deepcopy(new_fmt['elements'][original_tng_fmt]))
+    new_fmt['elements'][original_tng_fmt]['SemanticName'] = '4D_TANGENT'
+    new_fmt['elements'][new_tng_fmt]['id'] = str(new_tng_fmt)
+    new_fmt['elements'][new_tng_fmt]['Format'] = "R32G32B32A32_FLOAT"
+    new_fmt['elements'][new_tng_fmt]['AlignedByteOffset'] = copy.deepcopy(new_fmt['stride'])
+    new_fmt['stride'] = str(int(new_fmt['stride']) + 16)
+    new_vb.append({'SemanticName': 'TANGENT', 'SemanticIndex': '0', 'Buffer': tangentBuffer})
     if remove_physics == True:
         semantics_to_keep = ['POSITION', 'BLENDWEIGHT', 'BLENDINDICES', 'NORMAL', 'COLOR', 'TEXCOORD', 'TANGENT']
         simple_fmt = {'stride': '0', 'topology': new_fmt['topology'], 'format': new_fmt['format'], 'elements': []}
