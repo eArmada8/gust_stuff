@@ -187,6 +187,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
         if len(gltf_data['nodes'][i]['children']) == 0:
             del(gltf_data['nodes'][i]['children'])
     for subindex in range(len(subvbs['data'])):
+        print("Processing submesh {0}...".format(subindex))
         # Skip submesh if 4D, unless NUN data is available
         if (len(re.findall('[0-9]+', [x for x in fmts[subvbs['data'][subindex]['vertexBufferIndex']]['elements'] if x['SemanticName'] == 'POSITION'][0]['Format'])) == 3) \
             or not nun_maps == False:
@@ -195,6 +196,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
             fmts = generate_fmts(model_mesh_metadata) # Refresh FMT every time, to dereference
             submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata, model_skel_data, fmts, e=e, cull_vertices = True)
             if submesh_lod['clothID'] == 1 and not nun_maps == False:
+                print("Performing cloth mesh (4D) transformation...".format(subindex))
                 if (submesh_lod['NUNID']) >= 10000 and (submesh_lod['NUNID'] < 20000):
                     NUNID = (submesh_lod['NUNID'] % 10000) + nunv_offset
                 else:
@@ -301,6 +303,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
 # The argument passed (g1m_name) is actually the folder name
 def G1M2glTF(g1m_name, overwrite = False):
     with open(g1m_name + '.g1m', "rb") as f:
+        print("Processing {0}...".format(g1m_name + '.g1m'))
         file = {}
         nun_struct = {}
         file["file_magic"], = struct.unpack(">I", f.read(4))
