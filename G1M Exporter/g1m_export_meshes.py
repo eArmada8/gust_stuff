@@ -998,7 +998,7 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
         return({'fmt': new_fmt, 'ib': submesh['ib'], 'vb': new_vb, 'vgmap': submesh['vgmap']})
 
 
-def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True):
+def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True, transform_cloth = True):
     if not nun_maps == False:
         nun_indices = [x['name'][0:4] for x in nun_maps['nun_data']]
         if 'nunv' in nun_indices:
@@ -1009,6 +1009,7 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     lod_data = [x for x in model_mesh_metadata["sections"] if x['type'] == 'MESH_LOD'][0]
     for subindex in range(len(subvbs['data'])):
+        print("Processing submesh {0}...".format(subindex))
         submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata,\
             skel_data, fmts = generate_fmts(model_mesh_metadata), e=e, cull_vertices = cull_vertices)
         write_fmt(submesh['fmt'],'{0}{1}.fmt'.format(path, subindex))
@@ -1018,7 +1019,8 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
             with open('{0}{1}.vgmap'.format(path, subindex), 'wb') as f:
                 f.write(json.dumps(submesh['vgmap'], indent=4).encode("utf-8"))
         submesh_lod = [x for x in lod_data['data'][0]['lod'] if subindex in x['indices']][0]
-        if submesh_lod['clothID'] == 1 and not nun_maps == False:
+        if submesh_lod['clothID'] == 1 and not nun_maps == False and transform_cloth == True:
+            print("Performing cloth mesh (4D) transformation...".format(subindex))
             if (submesh_lod['NUNID']) >= 10000 and (submesh_lod['NUNID'] < 20000):
                 NUNID = (submesh_lod['NUNID'] % 10000) + nunv_offset
             else:
@@ -1107,8 +1109,9 @@ def get_ext_skeleton(g1m_name):
                 return False
 
 # The argument passed (g1m_name) is actually the folder name
-def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = True):
+def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = True, transform_cloth = True):
     with open(g1m_name + '.g1m', "rb") as f:
+        print("Processing {0}...".format(g1m_name + '.g1m'))
         file = {}
         nun_struct = {}
         file["file_magic"], = struct.unpack(">I", f.read(4))
@@ -1174,13 +1177,14 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
         if (overwrite == True) or not os.path.exists(g1m_name):
             if not os.path.exists(g1m_name):
                 os.mkdir(g1m_name)
-            if write_buffers == True:
-                write_submeshes(g1mg_stream, model_mesh_metadata, model_skel_data,\
-                    nun_maps, path = g1m_name+'/', e=e, cull_vertices = cull_vertices)
             with open(g1m_name+"/mesh_metadata.json", "wb") as f:
                 f.write(json.dumps(model_mesh_metadata, indent=4).encode("utf-8"))
             #with open(g1m_name+"/skel_data.json", "wb") as f:
                 #f.write(json.dumps(model_skel_data, indent=4).encode("utf-8"))
+            if write_buffers == True:
+                write_submeshes(g1mg_stream, model_mesh_metadata, model_skel_data,\
+                    nun_maps, path = g1m_name+'/', e=e, cull_vertices = cull_vertices,\
+                    transform_cloth = transform_cloth)
     return(True)
 
 if __name__ == "__main__":
@@ -1193,11 +1197,13 @@ if __name__ == "__main__":
         parser.add_argument('-n', '--no_buffers', help="Do not write fmt/ib/vb/vgmap files", action="store_false")
         parser.add_argument('-f', '--full_vertices',\
             help="Output full meshes instead of submeshs (identical to G1M tools)", action="store_false")
+        parser.add_argument('-s', '--skip_transform', help="Do not transform cloth meshes (4D->3D)", action="store_false")
         parser.add_argument('g1m_filename', help="Name of g1m file to extract meshes / G1MG metadata (required).")
         args = parser.parse_args()
         if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
             parseG1M(args.g1m_filename[:-4], overwrite = args.overwrite,\
-                write_buffers = args.no_buffers, cull_vertices = args.full_vertices)
+                write_buffers = args.no_buffers, cull_vertices = args.full_vertices,\
+                transform_cloth = args.skip_transform)
     else:
         # When run without command line arguments, it will attempt to obtain data from all models
         models = []
