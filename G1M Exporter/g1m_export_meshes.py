@@ -232,6 +232,59 @@ def parseNUNO3(chunkVersion, f, e):
     f.seek(8 * skip4,1)
     return(nuno3_block)
 
+def parseNUNO5(chunkVersion, f, e, entryIDtoNunoID):
+    nuno5_block = {}
+    nuno5_block['name'] = "nuno5"
+    nuno5_block['parentBoneID'] = None
+    nuno5_block['parentSetID'] = -1
+    # Not sure if it should just be nuno5_block['parentBoneID'], = struct.unpack(e+"I",f.read(4))
+    # instead of the next 2 lines
+    a,b = struct.unpack("<HH", f.read(4))
+    nuno5_block['parentBoneID'] = a if e == '<' else b
+    f.seek(4,1)
+    lodCount, = struct.unpack(e+"I", f.read(4))
+    f.seek(8,1)
+    nuno5_block['entryID'], nuno5_block['entryIDflag'] = struct.unpack(e+"2H", f.read(4))
+    if nuno5_block['entryIDflag'] & 0x7FF:
+        nuno5_block['parentSetID'] = entryIDtoNunoID[nuno5_block['entryID']]
+    f.seek(12,1)
+    for i in range(lodCount):
+        controlPointCount, = struct.unpack(e+"I", f.read(4))
+        cpSectionRelatedCount, = struct.unpack(e+"I", f.read(4))
+        skip = struct.unpack(e+"9I", f.read(36))
+        f.seek(4,1)
+        current_offset = f.tell()
+        cpOffset, = struct.unpack(e+"I", f.read(4))
+        f.seek(current_offset+cpOffset,0)
+        if i == 0: # We only want the first LOD, apparently?
+            nuno5_block['controlPoints'] = []
+            nuno5_block['influences'] = []
+            for i in range(controlPointCount):
+                controlpoint = list(struct.unpack(e+"3f", f.read(12)))
+                controlpoint.append(1.0)
+                nuno5_block['controlPoints'].append(controlpoint)
+                f.seek(12,1)
+                influence = {}
+                # Per Project G1M, P5 and P6 are incorrect, but we do not use them.
+                influence['P1'], influence['P2'], influence['P3'], influence['P4'], influence['P5'] = \
+                    struct.unpack(e+"iiiif", f.read(20))
+                influence['P6'] = 0.0
+                nuno5_block['influences'].append(influence)
+        else:
+            f.seek(44 * controlPointCount,1)
+        #Skip physics section
+        f.seek(32 * controlPointCount,1)
+        if (cpSectionRelatedCount == 3):
+            f.seek(24 * controlPointCount,1)
+        f.seek(skip[0] * 4 + skip[1] * 12 + skip[2] * 16 + skip[3] * 12 +\
+            skip[4] * 8 + skip[5] * 48 + skip[6] * 72 + skip[7] * 32, 1)
+        if skip[8] > 0:
+            for j in range(skip[8]):
+                current_offset = f.tell()
+                tempCount, = struct.unpack(e+"I", f.read(4))
+                f.seek(current_offset + (4 * tempCount) + 16)
+    return(nuno5_block)
+
 def parseNUNV1(chunkVersion, f, e):
     nunv1_block = {}
     nunv1_block['name'] = "nunv1"
@@ -297,6 +350,7 @@ def parseNUNO(nuno_chunk, e):
             chunk = {}
             chunk["Type"],chunk["size"],chunk["subchunk_count"] = struct.unpack(e+"III", f.read(12))
             chunk["subchunks"] = []
+            entryIDtoNunoID = {}
             for j in range(chunk["subchunk_count"]):
                 if chunk["Type"] == 0x00030001:
                     chunk["subchunks"].append(parseNUNO1(nuno_section["version"],f,e))
@@ -304,9 +358,32 @@ def parseNUNO(nuno_chunk, e):
                     chunk["subchunks"].append(parseNUNO2(nuno_section["version"],f,e))
                 elif chunk["Type"] == 0x00030003:
                     chunk["subchunks"].append(parseNUNO3(nuno_section["version"],f,e))
+                elif chunk["Type"] == 0x00030005:
+                    chunk["subchunks"].append(parseNUNO5(nuno_section["version"],f,e, entryIDtoNunoID))
+                    if not chunk["subchunks"][-1]["entryID"] in entryIDtoNunoID.keys():
+                        entryIDtoNunoID[chunk["subchunks"][-1]["entryID"]] = j
                 else:
                     chunk["subchunks"].append({'Error': 'unsupported NUNO'})
                     f.seek(chunk["size"],1)
+            if chunk["Type"] == 0x00030005:
+                # Untested, the model I have access to does not have subsets
+                nunoIDToSubsetMap = {}
+                for j in range(len(chunk["subchunks"])):
+                    if chunk["subchunks"][j]["parentSetID"] >= 0:
+                        if not (chunk["subchunks"][j]["parentSetID"] in nunoIDToSubsetMap.keys()):
+                        # New Map
+                            tempMap = {}
+                            parentchunk = chunk["subchunks"][chunk["subchunks"][j]["parentSetID"]]
+                            for k in range(len(parentchunk["controlPoints"])):
+                                tempMap[sum(parentchunk["controlPoints"][i])] = k
+                            nunoIDToSubsetMap[chunk["subchunks"][j]["parentSetID"]] = tempMap
+                        else:
+                        #Existing Map
+                            tempMap = nunoIDToSubsetMap[chunk["subchunks"][j]["parentSetID"]]
+                            for k in range(len(chunk["subchunks"][j]["controlPoints"])):
+                                if sum(chunk["subchunks"][j]["controlPoints"][k]) in tempMap.keys(): #should always be true?
+                                    chunk["subchunks"][j]["influences"][k]['P1'] = \
+                                        tempMap[sum(chunk["subchunks"][j]["controlPoints"][k])]
             nuno_section["chunks"].append(chunk)
     return(nuno_section)
 
@@ -390,6 +467,7 @@ def calc_nun_maps(nun_data, skel_data):
             triangles = []
             vertCount = 0
             transform_info = []
+            is_nuno5 = (nun_data[i]['name'] == 'nuno5')
             for pointIndex in range(len(nun_data[i]['controlPoints'])):
                 transform_point_info = {}
                 p = nun_data[i]['controlPoints'][pointIndex][0:3]
@@ -411,11 +489,16 @@ def calc_nun_maps(nun_data, skel_data):
                     parentID_bone = [x for x in skel_data['boneList'] if x['i'] == parentID][0]
                     # Trying to reproduce Noesis 4x3 inversion of parentID_bone here;
                     # 4x3 inversion appears to be 4x4 inversion with xyzw in the column, not row
-                    q_wxyz = Quaternion(parent_bone['abs_q']) * Quaternion(parentID_bone['abs_q']).inverse
-                    tm_temp = Quaternion(parentID_bone['abs_q']).transformation_matrix
-                    tm_temp[0:3,3] = parentID_bone['abs_p'] # Insert into 4th column of matrix
-                    pIDinv_pos_xyz = numpy.linalg.inv(tm_temp)[0:3,3] # Read 4th column after inversion
-                    temp_p = (numpy.array(Quaternion(parentID_bone['abs_q']).inverse.rotate(parent_bone['abs_p'])) + pIDinv_pos_xyz).tolist()
+                    #if not is_nuno5:
+                    if True:
+                        q_wxyz = Quaternion(parent_bone['abs_q']) * Quaternion(parentID_bone['abs_q']).inverse
+                        tm_temp = Quaternion(parentID_bone['abs_q']).transformation_matrix
+                        tm_temp[0:3,3] = parentID_bone['abs_p'] # Insert into 4th column of matrix
+                        pIDinv_pos_xyz = numpy.linalg.inv(tm_temp)[0:3,3] # Read 4th column after inversion
+                        temp_p = (numpy.array(Quaternion(parentID_bone['abs_q']).inverse.rotate(parent_bone['abs_p'])) + pIDinv_pos_xyz).tolist()
+                    #else:
+                        #q_wxyz = Quaternion(parent_bone['abs_q'])
+                        #temp_p = parent_bone['abs_p']
                     pos_xyz = (numpy.array(q_wxyz.rotate(p)) + temp_p).tolist()
                 bone = {}
                 bone['i'] = len(skel_data['boneList'])
@@ -425,10 +508,15 @@ def calc_nun_maps(nun_data, skel_data):
                 bone['q_wxyz'] = list(q_wxyz)
                 bone['pos_xyz'] = pos_xyz
                 parent_bone = [x for x in skel_data['boneList'] if x['i'] == parentID][0]
-                # Convert relative to absolute
-                qp = Quaternion(parent_bone['abs_q'])
-                bone["abs_q"] = list((qp * q_wxyz).unit)
-                bone["abs_p"] = (numpy.array(qp.rotate(bone['pos_xyz'])) + parent_bone['abs_p']).tolist()
+                #if is_nuno5 and link['P5'] == 0:
+                if False:
+                    bone["abs_q"] = bone['q_wxyz']
+                    bone["abs_p"] = bone['pos_xyz']
+                else:
+                    # Convert relative to absolute
+                    qp = Quaternion(parent_bone['abs_q'])
+                    bone["abs_q"] = list((qp * q_wxyz).unit)
+                    bone["abs_p"] = (numpy.array(qp.rotate(bone['pos_xyz'])) + parent_bone['abs_p']).tolist()
                 transform_point_info['bone_name'] = bone["bone_id"]
                 transform_point_info['abs_q'] = bone["abs_q"]
                 transform_point_info['abs_p'] = bone["abs_p"]
@@ -808,6 +896,8 @@ def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts
     return(submesh)
 
 def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', remove_physics = False):
+    is_nuno5 = (nun_maps['nun_data'][NUNID]['name'] == 'nuno5')
+    # NUNO5 subset code will go here eventually
     new_fmt = copy.deepcopy(submesh['fmt'])
     new_vb = copy.deepcopy(submesh['vb'])
     position_data = [x for x in submesh['vb'] if x['SemanticName'] == 'POSITION'][0]['Buffer']
@@ -857,7 +947,8 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
             vertNormBuff[-1] = (vertNormBuff[-1] / numpy.linalg.norm(vertNormBuff[-1])).tolist()
             tangentBuffer.append(b * tangent_data[i][1] + c * tangent_data[i][0] + d * tangent_data[i][2])
             tangentBuffer[-1] = (tangentBuffer[-1] / numpy.linalg.norm(tangentBuffer[-1])).tolist() + [tangent_data[i][3]]
-            # if NUNO5 d = (d / numpy.linalg.norm(d)) ?
+            if is_nuno5:
+                d = (d / numpy.linalg.norm(d))
             vertPosBuff.append((d * clothStuff4Buffer[i] + a).tolist())
     #Position
     original_pos_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'POSITION'][0]['id'])
@@ -905,6 +996,7 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
         return({'fmt': simple_fmt, 'ib': submesh['ib'], 'vb': simple_vb, 'vgmap': submesh['vgmap']})
     else:
         return({'fmt': new_fmt, 'ib': submesh['ib'], 'vb': new_vb, 'vgmap': submesh['vgmap']})
+
 
 def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True):
     if not nun_maps == False:
