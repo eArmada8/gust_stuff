@@ -361,6 +361,8 @@ def parseNUNO(nuno_chunk, e):
                     chunk["subchunks"].append(parseNUNO2(nuno_section["version"],f,e))
                 elif chunk["Type"] == 0x00030003:
                     chunk["subchunks"].append(parseNUNO3(nuno_section["version"],f,e))
+                elif chunk["Type"] == 0x00030004:
+                    f.seek(chunk["size"],1) # Skip NUNO4
                 elif chunk["Type"] == 0x00030005:
                     chunk["subchunks"].append(parseNUNO5(nuno_section["version"],f,e, entryIDtoNunoID))
                     if not chunk["subchunks"][-1]["entryID"] in entryIDtoNunoID.keys():
@@ -1173,7 +1175,8 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
         if len(nun_struct) > 0 and model_skel_data['jointCount'] > 1:
             nun_data = stack_nun(nun_struct)
             nun_maps = calc_nun_maps(nun_data, model_skel_data)
-            nun_maps['nun_data'] = nun_data
+            if not nun_maps == False:
+                nun_maps['nun_data'] = nun_data
         if os.path.exists(g1m_name) and (os.path.isdir(g1m_name)) and (overwrite == False):
             if str(input(g1m_name + " folder exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
                 overwrite = True
