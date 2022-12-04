@@ -56,15 +56,15 @@ def unpack_dxgi_vector(f, stride, dxgi_format, e = '<'):
     elif numtype == "SNORM" and (vec_elements * vec_bits / 8 == stride):
         # First read as integers
         if vec_bits == 32:
-            read = list(struct.unpack(e+str(vec_elements)+"I", f.read(stride)))
+            read = list(struct.unpack(e+str(vec_elements)+"i", f.read(stride)))
         elif vec_bits == 16:
-            read = list(struct.unpack(e+str(vec_elements)+"H", f.read(stride)))
+            read = list(struct.unpack(e+str(vec_elements)+"h", f.read(stride)))
         elif vec_bits == 8:
-            read = list(struct.unpack(e+str(vec_elements)+"B", f.read(stride)))
+            read = list(struct.unpack(e+str(vec_elements)+"b", f.read(stride)))
         # Convert to normalized floats
-        float_max = ((2**vec_bits)-1)
+        float_max = ((2**(vec_bits-1))-1)
         for i in range(len(read)):
-            read[i] = ((read[i] / float_max) * 2) - 1
+            read[i] = read[i] / float_max
     else:
         read = f.read(stride)
     return (read)
@@ -122,14 +122,14 @@ def pack_dxgi_vector(f, data, stride, dxgi_format, e = '<'):
         converted_data = []
         for i in range(vec_elements):
             #First convert back to unsigned integers, then pack
-            float_max = ((2**vec_bits)-1)
-            converted_data.append(int(round((min(max(data[i],-1),1) + 1) * float_max * 0.5)))
+            float_max = ((2**(vec_bits-1))-1)
+            converted_data.append(int(round(min(max(data[i],-1), 1) * float_max)))
             if vec_bits == 32:
-                f.write(struct.pack(e+"I", converted_data[i]))
+                f.write(struct.pack(e+"i", converted_data[i]))
             elif vec_bits == 16:
-                f.write(struct.pack(e+"H", converted_data[i]))
+                f.write(struct.pack(e+"h", converted_data[i]))
             elif vec_bits == 8:
-                f.write(struct.pack(e+"B", converted_data[i]))
+                f.write(struct.pack(e+"b", converted_data[i]))
     else:
         write = f.write(data)
     return
