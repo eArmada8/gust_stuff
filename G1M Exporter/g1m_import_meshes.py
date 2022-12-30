@@ -19,6 +19,106 @@ import glob, os, io, sys, struct, shutil, json
 from lib_fmtibvb import *
 from g1m_export_meshes import *
 
+def parseG1MforG1MF(g1m_name):
+    with open(g1m_name + '.g1m', "rb") as f:
+        file = {}
+        file["file_magic"], = struct.unpack(">I", f.read(4))
+        if file["file_magic"] == 0x5F4D3147:
+            e = '<' # Little Endian
+        elif file["file_magic"] == 0x47314D5F:
+            e = '>' # Big Endian
+        else:
+            print("not G1M!") # Figure this out later
+            sys.exit()
+        file["file_version"] = f.read(4).hex()
+        file["file_size"], = struct.unpack(e+"I", f.read(4))
+        chunks = {}
+        chunks["starting_offset"], chunks["reserved"], chunks["count"] = struct.unpack(e+"III", f.read(12))
+        chunks["chunks"] = []
+        f.seek(chunks["starting_offset"])
+        have_skeleton = False
+        for i in range(chunks["count"]):
+            chunk = {}
+            chunk["start_offset"] = f.tell()
+            chunk["magic"] = f.read(4).decode("utf-8")
+            chunk["version"] = f.read(4).hex()
+            chunk["size"], = struct.unpack(e+"I", f.read(4))
+            chunks["chunks"].append(chunk)
+            if chunk["magic"] in ['G1MF', 'FM1G']:
+                f.seek(chunk["start_offset"],0)
+                g1mf_stream = f.read(chunk["size"])
+            else:
+                f.seek(chunk["start_offset"] + chunk["size"],0) # Move to next chunk
+            file["chunks"] = chunks
+        return(g1mf_stream)
+
+def parseG1MF(g1mf_stream,e):
+    g1mf_section = {}
+    with io.BytesIO(g1mf_stream) as f:
+        g1mf_section["magic"] = f.read(4).decode("utf-8")
+        g1mf_section["version"], g1mf_section["size"], = struct.unpack(e+"II", f.read(8))
+        g1mf_section["unknown0"], g1mf_section["total_bones"], g1mf_section["total_g1ms_sections"],\
+            g1mf_section["total_matrices"], g1mf_section["geom_socket_section_count"],\
+            g1mf_section["material_section_count"], g1mf_section["shader_param_section_count"],\
+            g1mf_section["total_shader_params"], g1mf_section["total_shader_params_name_len"],\
+            g1mf_section["shader_section_size_minus_countX4_minus_12"], g1mf_section["vertex_buffer_section_count"],\
+            g1mf_section["vertex_attr_section_count"], g1mf_section["unknownC"],\
+            g1mf_section["joint_palette_section_count"], g1mf_section["total_joint_count"],\
+            g1mf_section["index_buffer_section_count"], g1mf_section["submesh_section_count"],\
+            g1mf_section["total_submesh_count"], g1mf_section["mesh_lod_section_count"],\
+            g1mf_section["total_mesh_lod_group_count"], g1mf_section["total_mesh_lod_group_submesh_count"]\
+            = struct.unpack(e+"21I", f.read(84))
+        remaining_data_len = len(g1mf_stream) - f.tell()
+        g1mf_section["rest_of_header"] = list(struct.unpack(e+"{0}I".format(int(remaining_data_len/4)), f.read(remaining_data_len)))
+        return(g1mf_section)
+
+# Only G1MG section data is rebuilt, everything else is copied over.
+# Some of the data is probably not correct, we will not know without further experimentation.
+def build_g1mf(new_g1mg_stream, g1m_name, e = '<'):
+    # Retrieve G1MF section from the current G1M file, as there will be sections we do not rebuild
+    old_g1mf_data = parseG1MF(parseG1MforG1MF(g1m_name), e)
+    # Load the NEW metadata.  It's a little inefficient to do it this way, but parsing is very fast so it really doesn't matter.
+    model_mesh_metadata = parseG1MG(new_g1mg_stream,e)
+    # Rebuild G1MF.
+    new_g1mf = old_g1mf_data["magic"].encode()
+    new_g1mf += struct.pack(e+"2I", old_g1mf_data["version"], old_g1mf_data["size"])
+    new_g1mf += struct.pack(e+"4I", old_g1mf_data["unknown0"], old_g1mf_data["total_bones"],\
+        old_g1mf_data["total_g1ms_sections"], old_g1mf_data["total_matrices"])
+    mkeys = {}
+    for i in range(len(model_mesh_metadata["sections"])):
+        mkeys[model_mesh_metadata["sections"][i]["type"]] = i
+    new_g1mf += struct.pack(e+"2I", model_mesh_metadata["sections"][mkeys["GEOMETRY_SOCKETS"]]["count"],\
+        model_mesh_metadata["sections"][mkeys["MATERIALS"]]["count"])
+    total_shader_name_len = 0
+    for i in range(len(model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["data"])):
+        for j in range(len(model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["data"][i])):
+            namelen = len(model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["data"][i][j]["name"])
+            total_shader_name_len += namelen + (4 - namelen % 4)
+    shader_section_size_minus_countX4_minus_12 = model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["size"]\
+        - model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["count"] * 4 - 12
+    new_g1mf += struct.pack(e+"4I", model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["count"],\
+        sum([len(x) for x in model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["data"]]),\
+        total_shader_name_len, shader_section_size_minus_countX4_minus_12)
+    new_g1mf += struct.pack(e+"I", model_mesh_metadata["sections"][mkeys["VERTEX_BUFFERS"]]["count"])
+    # Sum of buffer list is a completely wild guess for "unknownC"
+    new_g1mf += struct.pack(e+"2I", model_mesh_metadata["sections"][mkeys["VERTEX_ATTRIBUTES"]]["count"],\
+        sum([len(x["buffer_list"]) for x in model_mesh_metadata["sections"][mkeys["VERTEX_ATTRIBUTES"]]["data"]]))
+    new_g1mf += struct.pack(e+"2I", model_mesh_metadata["sections"][mkeys["JOINT_PALETTES"]]["count"],\
+        sum([len(x["joints"]) for x in model_mesh_metadata["sections"][mkeys["JOINT_PALETTES"]]["data"]]))
+    new_g1mf += struct.pack(e+"I", model_mesh_metadata["sections"][mkeys["INDEX_BUFFER"]]["count"])
+    # This can't be correct, perhaps the second value is total unknown2==1 or something like that??
+    new_g1mf += struct.pack(e+"2I", model_mesh_metadata["sections"][mkeys["SUBMESH"]]["count"],\
+        model_mesh_metadata["sections"][mkeys["SUBMESH"]]["count"])
+    lod_group_submesh_count = 0
+    for i in range(len(model_mesh_metadata["sections"][mkeys["MESH_LOD"]]["data"])):
+        lod_group_submesh_count += sum([len(x["indices"]) for x\
+            in model_mesh_metadata["sections"][mkeys["MESH_LOD"]]["data"][i]["lod"]])
+    new_g1mf += struct.pack(e+"3I", model_mesh_metadata["sections"][mkeys["MESH_LOD"]]["count"],\
+        sum([len(x["lod"]) for x in model_mesh_metadata["sections"][mkeys["MESH_LOD"]]["data"]]),\
+        lod_group_submesh_count)
+    new_g1mf += struct.pack(e+"{0}I".format(len(old_g1mf_data["rest_of_header"])), *old_g1mf_data["rest_of_header"])
+    return(new_g1mf)
+
 def parseG1MforG1MG(g1m_name):
     with open(g1m_name + '.g1m', "rb") as f:
         file = {}
@@ -364,6 +464,9 @@ def build_g1m(g1m_name):
             else:
                 print("not G1M!") # Figure this out later
                 sys.exit()
+            # Pack G1MG and G1MF here, to insert into G1M. (Endianness is needed)
+            new_g1mg_data = build_g1mg(g1m_name, e)
+            new_g1mf_data = build_g1mf(new_g1mg_data, g1m_name, e)
             file["file_version"] = f.read(4).hex()
             file["file_size"], = struct.unpack(e+"I", f.read(4))
             chunks = {}
@@ -376,8 +479,11 @@ def build_g1m(g1m_name):
                 chunk["magic"] = f.read(4).decode("utf-8")
                 chunk["version"] = f.read(4).hex()
                 chunk["size"], = struct.unpack(e+"I", f.read(4))
-                if chunk["magic"] in ['G1MG', 'GM1G']:
-                    new_g1m_data += build_g1mg(g1m_name, e) # Replace section
+                if chunk["magic"] in ['G1MF', 'FM1G']:
+                    new_g1m_data += new_g1mf_data # Replace section
+                    f.seek(chunk["start_offset"]+chunk["size"],0)
+                elif chunk["magic"] in ['G1MG', 'GM1G']:
+                    new_g1m_data += new_g1mg_data # Replace section
                     f.seek(chunk["start_offset"]+chunk["size"],0)
                 else:
                     f.seek(chunk["start_offset"],0) # Move to beginning
