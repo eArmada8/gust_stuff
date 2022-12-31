@@ -127,13 +127,13 @@ def name_bones(skel_data, oid):
 def combine_skeleton(base_skel_data, model_skel_data):
     if model_skel_data['jointIndicesCount'] == len(base_skel_data['boneIDList']):
         return(base_skel_data)
-    else: # Everything below here is untested! (The model I have access to does not have extra bones)
+    else:
         combined_data = base_skel_data
         externalOffset = len(combined_data['boneIDList'])
         externalOffsetList = len(combined_data['boneList'])
         for i in range(model_skel_data['jointIndicesCount']):
-            id = model_skel_data['boneIDList'][i]['id']
-            if i >= externalOffset or i ==0:
+            id = model_skel_data['boneIDList'][i]
+            if i >= externalOffset or i == 0:
                 combined_data['boneIDList'].append(id + externalOffsetList +1)
             if (id != 0xFFFF and i != 0):
                 combined_data['boneToBoneID'][id + externalOffsetList] = i
@@ -354,22 +354,20 @@ def parseNUNO(nuno_chunk, e):
             chunk["Type"],chunk["size"],chunk["subchunk_count"] = struct.unpack(e+"III", f.read(12))
             chunk["subchunks"] = []
             entryIDtoNunoID = {}
-            for j in range(chunk["subchunk_count"]):
-                if chunk["Type"] == 0x00030001:
-                    chunk["subchunks"].append(parseNUNO1(nuno_section["version"],f,e))
-                elif chunk["Type"] == 0x00030002:
-                    chunk["subchunks"].append(parseNUNO2(nuno_section["version"],f,e))
-                elif chunk["Type"] == 0x00030003:
-                    chunk["subchunks"].append(parseNUNO3(nuno_section["version"],f,e))
-                elif chunk["Type"] == 0x00030004:
-                    f.seek(chunk["size"],1) # Skip NUNO4
-                elif chunk["Type"] == 0x00030005:
-                    chunk["subchunks"].append(parseNUNO5(nuno_section["version"],f,e, entryIDtoNunoID))
-                    if not chunk["subchunks"][-1]["entryID"] in entryIDtoNunoID.keys():
-                        entryIDtoNunoID[chunk["subchunks"][-1]["entryID"]] = j
-                else:
-                    chunk["subchunks"].append({'Error': 'unsupported NUNO'})
-                    f.seek(chunk["size"],1)
+            if chunk["Type"] in [0x00030001, 0x00030002, 0x00030003, 0x00030005]: # Skip NUNO4, unknown
+                for j in range(chunk["subchunk_count"]):
+                    if chunk["Type"] == 0x00030001:
+                        chunk["subchunks"].append(parseNUNO1(nuno_section["version"],f,e))
+                    elif chunk["Type"] == 0x00030002:
+                        chunk["subchunks"].append(parseNUNO2(nuno_section["version"],f,e))
+                    elif chunk["Type"] == 0x00030003:
+                        chunk["subchunks"].append(parseNUNO3(nuno_section["version"],f,e))
+                    elif chunk["Type"] == 0x00030005:
+                        chunk["subchunks"].append(parseNUNO5(nuno_section["version"],f,e, entryIDtoNunoID))
+                        if not chunk["subchunks"][-1]["entryID"] in entryIDtoNunoID.keys():
+                            entryIDtoNunoID[chunk["subchunks"][-1]["entryID"]] = j
+            else:
+                f.seek(chunk["size"],1)
             if chunk["Type"] == 0x00030005:
                 # Untested, the model I have access to does not have subsets
                 nunoIDToSubsetMap = {}
@@ -456,13 +454,13 @@ def computeCenterOfMass(position, weights, bones, nunoMap, nun_transform_info):
     return(temp)
 
 def calc_nun_maps(nun_data, skel_data):
-    try:
-        nunvOffset = 0
-        nunsOffset = 0
-        clothMap = []
-        clothParentIDMap = []
-        driverMeshList = []
-        for i in range(len(nun_data)):
+    nunvOffset = 0
+    nunsOffset = 0
+    clothMap = []
+    clothParentIDMap = []
+    driverMeshList = []
+    for i in range(len(nun_data)):
+        try:
             boneStart = len(skel_data['boneList'])
             parentBone = skel_data['boneIDList'][nun_data[i]['parentBoneID']]
             nunoMap = {}
@@ -553,9 +551,9 @@ def calc_nun_maps(nun_data, skel_data):
             clothMap.append(nunoMap)
             clothParentIDMap.append(parentBone)
             driverMeshList.append(driverMesh)
-        return({'clothMap': clothMap, 'clothParentIDMap': clothParentIDMap, 'driverMeshList': driverMeshList})
-    except:
-        return(False)
+        except:
+            pass
+    return({'clothMap': clothMap, 'clothParentIDMap': clothParentIDMap, 'driverMeshList': driverMeshList})
 
 def parseG1MG(g1mg_chunk,e):
     g1mg_section = {}
@@ -1147,7 +1145,7 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
                 if os.path.exists(g1m_name+'Oid.bin'):
                     model_skel_oid = binary_oid_to_dict(g1m_name+'Oid.bin')
                     model_skel_data = name_bones(model_skel_data, model_skel_oid)
-                if model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] == -214748364:
+                if model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] < -200000000:
                     #Internal Skeleton
                     model_skel_data = calc_abs_skeleton(model_skel_data)
                 else:
