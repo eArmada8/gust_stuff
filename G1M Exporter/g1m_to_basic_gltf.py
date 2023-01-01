@@ -202,6 +202,9 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
                 else:
                     NUNID = submesh_lod['NUNID'] % 10000
                 submesh = render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e=e, remove_physics = True)
+            if submesh_lod['clothID'] == 2:
+                print("Performing cloth mesh (4D) transformation...".format(subindex))
+                submesh = render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_data, remove_physics = True)
             # Skip empty submeshes
             if len(submesh['ib']) > 0:
                 skip_weights = False
@@ -272,7 +275,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
                 mesh_nodes.append(len(gltf_data['nodes']))
                 gltf_data['nodes'].append({'mesh': len(gltf_data['meshes']), 'name': "Mesh_{0}".format(subindex)})
                 gltf_data['meshes'].append({"primitives": [primitive], "name": "Mesh_{0}".format(subindex)})
-                if skel_present and not skip_weights:
+                if skel_present and not skip_weights and not submesh_lod['clothID'] == 2:
                     gltf_data['nodes'][-1]['skin'] = len(gltf_data['skins'])
                     skin_bones = list_of_utilized_bones(submesh, model_skel_data)
                     inv_mtx_buffer = bytes()
@@ -334,7 +337,7 @@ def G1M2glTF(g1m_name, overwrite = False):
                 if os.path.exists(g1m_name+'Oid.bin'):
                     model_skel_oid = binary_oid_to_dict(g1m_name+'Oid.bin')
                     model_skel_data = name_bones(model_skel_data, model_skel_oid)
-                if model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] == -214748364:
+                if model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] < -200000000:
                     #Internal Skeleton
                     model_skel_data = calc_abs_skeleton(model_skel_data)
                 else:
