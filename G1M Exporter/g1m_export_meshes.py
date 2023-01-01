@@ -53,6 +53,7 @@ def parseG1MS(g1ms_chunk,e):
         g1ms_section["version"], g1ms_section["size"], = struct.unpack(e+"II", f.read(8))
         jointDataOffset, unknown = struct.unpack(e+"II", f.read(8))
         g1ms_section["jointCount"], g1ms_section["jointIndicesCount"], g1ms_section["layer"] = struct.unpack(e+"HHH", f.read(6))
+        g1ms_section["externalOffset"], g1ms_section["externalOffsetList"], g1ms_section["externalOffsetMax"] = 0, 0, 0
         f.seek(2,1)
         boneIDList = []
         boneToBoneID = {}
@@ -129,22 +130,23 @@ def combine_skeleton(base_skel_data, model_skel_data):
         return(base_skel_data)
     else:
         combined_data = base_skel_data
-        externalOffset = len(combined_data['boneIDList'])
-        externalOffsetList = len(combined_data['boneList'])
+        combined_data['externalOffset'] = len(combined_data['boneIDList'])
+        combined_data['externalOffsetList'] = len(combined_data['boneList'])
         for i in range(model_skel_data['jointIndicesCount']):
             id = model_skel_data['boneIDList'][i]
-            if i >= externalOffset or i == 0:
-                combined_data['boneIDList'].append(id + externalOffsetList +1)
+            if i >= combined_data['externalOffset'] or i == 0:
+                combined_data['boneIDList'].append(id + combined_data['externalOffsetList'] + 1)
             if (id != 0xFFFF and i != 0):
-                combined_data['boneToBoneID'][id + externalOffsetList] = i
+                combined_data['boneToBoneID'][id + combined_data['externalOffsetList']] = i
         for i in range(model_skel_data["jointCount"]):
+            combined_data['externalOffsetMax'] += 1
             bone = model_skel_data['boneList'][i]
-            bone['i'] = i + externalOffsetList
+            bone['i'] = i + combined_data['externalOffsetList']
             bone['bone_id'] = 'Clothbone_' + str(i)
             if bone['parentID'] < 0:
                 bone['parentID'] = bone['parentID'] & 0xFFFF
             else:
-                bone['parentID'] = bone['parentID'] + externalOffsetList
+                bone['parentID'] = bone['parentID'] + combined_data['externalOffsetList']
             parent_bone = [x for x in combined_data['boneList'] if x['i'] == bone['parentID']][0]
             combined_data['boneList'].append(calc_abs_rotation_position(bone, parent_bone))
         return(combined_data)
@@ -1000,6 +1002,51 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
     else:
         return({'fmt': new_fmt, 'ib': submesh['ib'], 'vb': new_vb, 'vgmap': submesh['vgmap']})
 
+def render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_data, remove_physics = False):
+    new_fmt = copy.deepcopy(submesh['fmt'])
+    new_vb = copy.deepcopy(submesh['vb'])
+    submeshinfo = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]["data"][subindex]
+    palette = [x["joints"] for x in [x for x in model_mesh_metadata['sections'] if x['type'] == "JOINT_PALETTES"][0]["data"]][submeshinfo['bonePaletteIndex']]
+    physicsBoneList = [x["physicsIndex"] & 0xFFFF for x in palette]
+    position_data = [x for x in submesh['vb'] if x['SemanticName'] == 'POSITION'][0]['Buffer']
+    oldSkinIndiceList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDINDICES'][0]['Buffer']
+    vertPosBuff = []
+    jointIndexBuff = []
+    for i in range(len(position_data)):
+        if oldSkinIndiceList[i][0] // 3 < len(physicsBoneList):
+            index = physicsBoneList[oldSkinIndiceList[i][0] // 3]
+            if index < len(model_skel_data["boneList"]):
+                quat1 = Quaternion(model_skel_data["boneList"][index]["abs_q"])
+                quat2 = Quaternion([quat1[0], 0-quat1[1], 0-quat1[2], 0-quat1[3]]) \
+                    * Quaternion(0, position_data[i][0], position_data[i][1], position_data[i][2]) \
+                    * quat1
+                vertPosBuff.append((numpy.array(model_skel_data["boneList"][index]["abs_p"]) \
+                    + numpy.array([quat2[1], quat2[2], quat2[3]])).tolist())
+    original_pos_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'POSITION'][0]['id'])
+    new_pos_fmt = len(new_fmt['elements'])
+    new_fmt['elements'].append(copy.deepcopy(new_fmt['elements'][original_pos_fmt]))
+    new_fmt['elements'][original_pos_fmt]['SemanticName'] = '4D_POSITION'
+    new_fmt['elements'][new_pos_fmt]['id'] = str(new_pos_fmt)
+    new_fmt['elements'][new_pos_fmt]['Format'] = "R32G32B32_FLOAT"
+    new_fmt['elements'][new_pos_fmt]['AlignedByteOffset'] = copy.deepcopy(new_fmt['stride'])
+    new_fmt['stride'] = str(int(new_fmt['stride']) + 12)
+    new_vb.append({'SemanticName': 'POSITION', 'SemanticIndex': '0', 'Buffer': vertPosBuff})
+    if remove_physics == True:
+        semantics_to_keep = ['POSITION', 'BLENDWEIGHT', 'BLENDINDICES', 'NORMAL', 'COLOR', 'TEXCOORD', 'TANGENT']
+        simple_fmt = {'stride': '0', 'topology': new_fmt['topology'], 'format': new_fmt['format'], 'elements': []}
+        simple_vb = []
+        offset = 0
+        for i in range(len(new_fmt['elements'])):
+            if (new_fmt['elements'][i]['SemanticName'] in semantics_to_keep) and (new_fmt['elements'][i]['SemanticIndex'] == '0'):
+                simple_fmt['elements'].append(copy.deepcopy(new_fmt['elements'][i]))
+                simple_vb.append(copy.deepcopy(new_vb[i]))
+                simple_fmt['elements'][-1]['id'] = str(len(simple_fmt['elements']) - 1)
+                simple_fmt['elements'][-1]['AlignedByteOffset'] = str(offset)
+                offset += get_stride_from_dxgi_format(simple_fmt['elements'][-1]['Format'])
+        simple_fmt['stride'] = str(offset)
+        return({'fmt': simple_fmt, 'ib': submesh['ib'], 'vb': simple_vb, 'vgmap': submesh['vgmap']})
+    else:
+        return({'fmt': new_fmt, 'ib': submesh['ib'], 'vb': new_vb, 'vgmap': submesh['vgmap']})
 
 def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True, transform_cloth = True):
     if not nun_maps == False:
@@ -1039,6 +1086,12 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
             write_fmt(driverMesh_fmt,'{0}{1}_drivermesh.fmt'.format(path, subindex))
             write_ib(drivermesh['indices'],'{0}{1}_drivermesh.ib'.format(path, subindex), driverMesh_fmt)
             write_vb(drivermesh['vertices'],'{0}{1}_drivermesh.vb'.format(path, subindex), driverMesh_fmt)
+        if submesh_lod['clothID'] == 2 and transform_cloth == True:
+            print("Performing cloth mesh (4D) transformation...".format(subindex))
+            transformed_submesh = render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, skel_data)
+            write_fmt(transformed_submesh['fmt'],'{0}{1}_transformed.fmt'.format(path, subindex))
+            write_ib(transformed_submesh['ib'],'{0}{1}_transformed.ib'.format(path, subindex), transformed_submesh['fmt'])
+            write_vb(transformed_submesh['vb'],'{0}{1}_transformed.vb'.format(path, subindex), transformed_submesh['fmt'])
 
 # The argument passed (g1m_name) is actually the folder name
 def parseSkelG1M(g1m_name):
