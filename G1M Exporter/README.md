@@ -45,12 +45,15 @@ The default behavior of the exporter is to fully separate each submesh from its 
 `-s, --skip_transform`
 The default behavior of the exporter is to transform cloth meshes (so-called 4D meshes) into 3D space.  Using this command skips transformation.
 
+`-e, --write_empty_buffers`
+The default behavior is to skip empty meshes, since those cause Blender imports to fail.  (Fmt and vgmap files are still written.)  These are detected by empty index buffers.  Using this command will cause the scripts to write the buffers, even if they are empty.
+
 **Cloth Mesh Transformation Setting:**
 Transforming cloth meshes can be slow.  If you do not have any need for cloth meshes, it would be prudent to disable transformation, either in the command line or (permanently) by editing the python script itself.  There is a line at the top:
 `transform_cloth_mesh_default = True`
 which you can change to 
 `transform_cloth_mesh_default = False`
-This will also change the command line argument `-s, --skip_transform` into `'-t, --transform` which you would call to enable transforms instead.
+This will also change the command line argument `-s, --skip_transform` into `-t, --transform` which you would call to enable transforms instead.
 
 ### g1m_import_meshes.py
 Double click the python script and it will search the current folder for all .g1m files with exported folders, and import the meshes in the folder back into g1mmdl file.  Additionally, it will parse the metadata JSON file (G1MG section) if available and use that information to rebuild the entire geometry (G1MG) section of the G1M file.  This script requires a working g1m file already be present as it does not reconstruct the entire file; only the G1MG section.  The remaining parts of the file are copied unaltered from the intact g1m file.
