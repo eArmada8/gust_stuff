@@ -1048,7 +1048,7 @@ def render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_da
     else:
         return({'fmt': new_fmt, 'ib': submesh['ib'], 'vb': new_vb, 'vgmap': submesh['vgmap']})
 
-def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True, transform_cloth = True):
+def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True, transform_cloth = True, write_empty_buffers = False):
     if not nun_maps == False:
         nun_indices = [x['name'][0:4] for x in nun_maps['nun_data']]
         if 'nunv' in nun_indices:
@@ -1063,8 +1063,9 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
         submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata,\
             skel_data, fmts = generate_fmts(model_mesh_metadata), e=e, cull_vertices = cull_vertices)
         write_fmt(submesh['fmt'],'{0}{1}.fmt'.format(path, subindex))
-        write_ib(submesh['ib'],'{0}{1}.ib'.format(path, subindex), submesh['fmt'])
-        write_vb(submesh['vb'],'{0}{1}.vb'.format(path, subindex), submesh['fmt'])
+        if len(submesh['ib']) > 0 or write_empty_buffers == True:
+            write_ib(submesh['ib'],'{0}{1}.ib'.format(path, subindex), submesh['fmt'])
+            write_vb(submesh['vb'],'{0}{1}.vb'.format(path, subindex), submesh['fmt'])
         if not submesh["vgmap"] == False:
             with open('{0}{1}.vgmap'.format(path, subindex), 'wb') as f:
                 f.write(json.dumps(submesh['vgmap'], indent=4).encode("utf-8"))
@@ -1077,15 +1078,17 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
                 NUNID = submesh_lod['NUNID'] % 10000
             transformed_submesh = render_cloth_submesh(submesh, NUNID, skel_data, nun_maps, e=e)
             write_fmt(transformed_submesh['fmt'],'{0}{1}_transformed.fmt'.format(path, subindex))
-            write_ib(transformed_submesh['ib'],'{0}{1}_transformed.ib'.format(path, subindex), transformed_submesh['fmt'])
-            write_vb(transformed_submesh['vb'],'{0}{1}_transformed.vb'.format(path, subindex), transformed_submesh['fmt'])
+            if len(transformed_submesh['ib']) > 0 or write_empty_buffers == True:
+                write_ib(transformed_submesh['ib'],'{0}{1}_transformed.ib'.format(path, subindex), transformed_submesh['fmt'])
+                write_vb(transformed_submesh['vb'],'{0}{1}_transformed.vb'.format(path, subindex), transformed_submesh['fmt'])
             if not transformed_submesh["vgmap"] == False:
                 with open('{0}{1}_transformed.vgmap'.format(path, subindex), 'wb') as f:
                     f.write(json.dumps(transformed_submesh['vgmap'], indent=4).encode("utf-8"))
             drivermesh = nun_maps['driverMeshList'][NUNID]
             write_fmt(driverMesh_fmt,'{0}{1}_drivermesh.fmt'.format(path, subindex))
-            write_ib(drivermesh['indices'],'{0}{1}_drivermesh.ib'.format(path, subindex), driverMesh_fmt)
-            write_vb(drivermesh['vertices'],'{0}{1}_drivermesh.vb'.format(path, subindex), driverMesh_fmt)
+            if len(transformed_submesh['ib']) > 0 or write_empty_buffers == True:
+                write_ib(drivermesh['indices'],'{0}{1}_drivermesh.ib'.format(path, subindex), driverMesh_fmt)
+                write_vb(drivermesh['vertices'],'{0}{1}_drivermesh.vb'.format(path, subindex), driverMesh_fmt)
         if submesh_lod['clothID'] == 2 and transform_cloth == True:
             print("Performing cloth mesh (4D) transformation...".format(subindex))
             transformed_submesh = render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, skel_data)
@@ -1165,7 +1168,7 @@ def get_ext_skeleton(g1m_name):
                 return False
 
 # The argument passed (g1m_name) is actually the folder name
-def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = True, transform_cloth = transform_cloth_mesh_default):
+def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = True, transform_cloth = transform_cloth_mesh_default, write_empty_buffers = False):
     with open(g1m_name + '.g1m', "rb") as f:
         print("Processing {0}...".format(g1m_name + '.g1m'))
         file = {}
@@ -1241,7 +1244,7 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
             if write_buffers == True:
                 write_submeshes(g1mg_stream, model_mesh_metadata, model_skel_data,\
                     nun_maps, path = g1m_name+'/', e=e, cull_vertices = cull_vertices,\
-                    transform_cloth = transform_cloth)
+                    transform_cloth = transform_cloth, write_empty_buffers = write_empty_buffers)
     return(True)
 
 if __name__ == "__main__":
@@ -1258,6 +1261,7 @@ if __name__ == "__main__":
             parser.add_argument('-s', '--skip_transform', help="Do not transform cloth meshes (4D->3D)", action="store_false")
         else:
             parser.add_argument('-t', '--transform', help="Transform cloth meshes (4D->3D)", action="store_true")
+        parser.add_argument('-e', '--write_empty_buffers', help="Write ib/vb files even if 0 bytes", action="store_false")
         parser.add_argument('g1m_filename', help="Name of g1m file to extract meshes / G1MG metadata (required).")
         args = parser.parse_args()
         if transform_cloth_mesh_default == True:
@@ -1267,7 +1271,7 @@ if __name__ == "__main__":
         if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
             parseG1M(args.g1m_filename[:-4], overwrite = args.overwrite,\
                 write_buffers = args.no_buffers, cull_vertices = args.full_vertices,\
-                transform_cloth = transform_cloth)
+                transform_cloth = transform_cloth, write_empty_buffers = args.write_empty_buffers)
     else:
         # When run without command line arguments, it will attempt to obtain data from all models
         models = []
