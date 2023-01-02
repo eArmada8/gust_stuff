@@ -189,8 +189,11 @@ def read_ib(ib_filename, fmt_struct, e = '<'):
 def write_ib_stream(ib_data, ib_stream, fmt_struct, e = '<'):
     # See above about cheating
     ib_stride = int(int(re.findall("[0-9]+", fmt_struct["format"])[0])/8)
-    if type(ib_data[0]) == list: # Flatten list for legacy code
-        new_ib_data = [x for y in ib_data for x in y]
+    if len(ib_data) > 0:
+        if type(ib_data[0]) == list: # Flatten list for legacy code
+            new_ib_data = [x for y in ib_data for x in y]
+        else:
+            new_ib_data = ib_data
     else:
         new_ib_data = ib_data
     for i in range(len(new_ib_data)):
