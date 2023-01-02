@@ -1135,8 +1135,9 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
             print("Performing cloth mesh (4D) transformation...".format(subindex))
             transformed_submesh = render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, skel_data)
             write_fmt(transformed_submesh['fmt'],'{0}{1}_transformed.fmt'.format(path, subindex))
-            write_ib(transformed_submesh['ib'],'{0}{1}_transformed.ib'.format(path, subindex), transformed_submesh['fmt'])
-            write_vb(transformed_submesh['vb'],'{0}{1}_transformed.vb'.format(path, subindex), transformed_submesh['fmt'])
+            if len(transformed_submesh['ib']) > 0 or write_empty_buffers == True:
+                write_ib(transformed_submesh['ib'],'{0}{1}_transformed.ib'.format(path, subindex), transformed_submesh['fmt'])
+                write_vb(transformed_submesh['vb'],'{0}{1}_transformed.vb'.format(path, subindex), transformed_submesh['fmt'])
 
 # The argument passed (g1m_name) is actually the folder name
 def parseSkelG1M(g1m_name):
