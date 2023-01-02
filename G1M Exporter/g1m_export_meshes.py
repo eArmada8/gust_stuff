@@ -625,7 +625,7 @@ def parseG1MG(g1mg_chunk,e):
                             shader["size"], name_size, shader["unk1"], shader["buffer_type"], shader["buffer_count"] = struct.unpack(e+"3I2H",f.read(16))
                             shader["name"] = f.read(name_size).replace(b'\x00',b'').decode()
                             shader["buffer"] = []
-                            for k in range(shader["buffer_count"]):
+                            for l in range(shader["buffer_count"]):
                                 match shader["buffer_type"]:
                                     case 1:
                                         shader["buffer"].append(struct.unpack(e+"f", f.read(4))[0])
