@@ -194,7 +194,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
             submesh_lod = [x for x in lod_data['data'][0]['lod'] if subindex in x['indices']][0]
             primitive = {"attributes":{}}
             fmts = generate_fmts(model_mesh_metadata) # Refresh FMT every time, to dereference
-            submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata, model_skel_data, fmts, e=e, cull_vertices = True)
+            submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata, model_skel_data, fmts, e=e, cull_vertices = True, preserve_trianglestrip = True)
             if submesh_lod['clothID'] == 1 and not nun_maps == False:
                 print("Performing cloth mesh (4D) transformation...".format(subindex))
                 if (submesh_lod['NUNID']) >= 10000 and (submesh_lod['NUNID'] < 20000):
