@@ -190,6 +190,13 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, e = '<')
                             for l in range(len(ib[k])):
                                 ib[k][l] += ib_offset
                         composite_ib.extend(ib)
+                    # Determine indexBufferPrimType, which is set in submesh section instead of vertex attribute section
+                    if fmt["topology"] == "trianglelist":
+                        indexBufferPrimType = 3
+                    elif fmt["topology"] == "trianglestrip":
+                        indexBufferPrimType = 4
+                    else:
+                        indexBufferPrimType = 1
                     # Update submesh info with new offsets and counts
                     vbsub_info[existing_submeshes[j]] = {"submeshFlags": subvbs['data'][existing_submeshes[j]]['submeshFlags'],\
                         "vertexBufferIndex": i,\
@@ -200,7 +207,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, e = '<')
                         "materialIndex": subvbs['data'][existing_submeshes[j]]['materialIndex'],\
                         "indexBufferIndex": i,\
                         "unknown2": subvbs['data'][existing_submeshes[j]]['unknown2'],\
-                        "indexBufferPrimType": subvbs['data'][existing_submeshes[j]]['indexBufferPrimType'],\
+                        "indexBufferPrimType": indexBufferPrimType,\
                         "vertexBufferOffset": len(composite_vb[0]['Buffer']) - len(vb[0]['Buffer']),\
                         "vertexCount": len(vb[0]['Buffer']),\
                         "indexBufferOffset": int((len(composite_ib) - len(ib)) * 3),\
