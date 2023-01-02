@@ -583,7 +583,7 @@ def parseG1MG(g1mg_chunk,e):
                     section['type'] = 'GEOMETRY_SOCKETS'
                     sockets_groups = []
                     for j in range(section['count']):
-                        sockets_group = {'start': {}, 'end': {}}
+                        sockets_group = {'id_referenceonly': j, 'start': {}, 'end': {}}
                         sockets_group['start']['bone_id'], sockets_group['start']['unknown'],\
                             sockets_group['start']['weight'] = struct.unpack(e+"2hf", f.read(8))
                         sockets_group['start']['scale'] = struct.unpack(e+"3f", f.read(12))
@@ -600,7 +600,7 @@ def parseG1MG(g1mg_chunk,e):
                     section['type'] = 'MATERIALS'
                     texture_block = []
                     for j in range(section['count']):
-                        texture_section = {}
+                        texture_section = {'id_referenceonly': j}
                         texture_section['unknown1'], texture_section['textureCount'], texture_section['unknown2'],\
                             texture_section['unknown3'] = struct.unpack(e+"4I", f.read(16))
                         textures = []
@@ -617,11 +617,11 @@ def parseG1MG(g1mg_chunk,e):
                     section['type'] = 'SHADER_PARAMS'
                     shader_blocks = []
                     for j in range(section['count']):
-                        shader_info = {}
+                        shader_info = {'block_id_referenceonly': j}
                         shader_info['shader_count'], = struct.unpack(e+"I", f.read(4))
                         shader_block = []
-                        for j in range(shader_info['shader_count']):
-                            shader = {}
+                        for k in range(shader_info['shader_count']):
+                            shader = {'id_referenceonly': k}
                             shader["size"], name_size, shader["unk1"], shader["buffer_type"], shader["buffer_count"] = struct.unpack(e+"3I2H",f.read(16))
                             shader["name"] = f.read(name_size).replace(b'\x00',b'').decode()
                             shader["buffer"] = []
@@ -638,13 +638,14 @@ def parseG1MG(g1mg_chunk,e):
                                     case 5:
                                         shader["buffer"].append(struct.unpack(e+"i", f.read(4))[0])
                             shader_block.append(shader)
-                        shader_blocks.append(shader_block)
+                        shader_info['shader_block'] = shader_block
+                        shader_blocks.append(shader_info)
                     section['data'] = shader_blocks
                 case 0x00010004:
                     section['type'] = 'VERTEX_BUFFERS'
                     vertex_block = []
                     for j in range(section['count']):
-                        buffer = {}
+                        buffer = {'id_referenceonly': j}
                         buffer["unknown1"], buffer["stride"], buffer["count"] = struct.unpack(e+"3I", f.read(12))
                         if g1mg_section["version"] > 0x30303430:
                             buffer["unknown2"], = struct.unpack(e+"I", f.read(4))
@@ -662,7 +663,7 @@ def parseG1MG(g1mg_chunk,e):
                     'TANGENT', 'BINORMAL', 'TESSFACTOR', 'POSITIONT', 'COLOR', 'FOG', 'DEPTH', 'SAMPLE'] #What is Sample??
                     vertex_attr_block = []
                     for j in range(section['count']):
-                        attributes = {}
+                        attributes = {'id_referenceonly': j}
                         list_count, = struct.unpack(e+"I", f.read(4))
                         attributes['buffer_list'] = struct.unpack(e+str(list_count)+"I", f.read(4*list_count))
                         attributes['attr_count'], = struct.unpack(e+"I", f.read(4))
@@ -705,11 +706,11 @@ def parseG1MG(g1mg_chunk,e):
                     section['type'] = 'JOINT_PALETTES'
                     joint_block = []
                     for j in range(section['count']):
-                        joint_info = {}
+                        joint_info = {'block_id_referenceonly': j}
                         joint_info['joint_count'], = struct.unpack(e+"I", f.read(4))
                         joints = []
                         for k in range(joint_info['joint_count']):
-                            joint = {}
+                            joint = {'id_referenceonly': k, 'vgmap_id_referenceonly': k*3}
                             joint['G1MMIndex'], joint['physicsIndex'], joint['jointIndex'] = struct.unpack(e+"3I", f.read(12))
                             if joint['jointIndex'] > 0x80000000: #External Skeleton Bone
                                 joint['physicsIndex'] = joint['physicsIndex'] ^ 0x80000000
@@ -725,7 +726,7 @@ def parseG1MG(g1mg_chunk,e):
                     section['type'] = 'INDEX_BUFFER'
                     index_block = []
                     for j in range(section['count']):
-                        buffer = {}
+                        buffer = {'id_referenceonly': j}
                         buffer["count"], data_type = struct.unpack(e+"II", f.read(8))
                         if g1mg_section["version"] > 0x30303430:
                             buffer["unknown1"], = struct.unpack(e+"I", f.read(4))
@@ -742,7 +743,7 @@ def parseG1MG(g1mg_chunk,e):
                     section['type'] = 'SUBMESH'
                     submesh_blocks = []
                     for j in range(section['count']):
-                        submesh_info = {}
+                        submesh_info = {'id_referenceonly': j}
                         submesh_info["submeshFlags"], submesh_info["vertexBufferIndex"], submesh_info["bonePaletteIndex"],\
                         submesh_info["boneIndex"], submesh_info["unknown"], submesh_info["shaderParamIndex"],\
                         submesh_info["materialIndex"], submesh_info["indexBufferIndex"], submesh_info["unknown2"],\
@@ -755,7 +756,7 @@ def parseG1MG(g1mg_chunk,e):
                     section['type'] = 'MESH_LOD'
                     lod_blocks = []
                     for j in range(section['count']):
-                        lod_block = {}
+                        lod_block = {'block_id_referenceonly': j}
                         lod_block["LOD"], = struct.unpack(e+"I", f.read(4))
                         if g1mg_section["version"] > 0x30303330:
                             lod_block["Group"], lod_block["GroupEntryIndex"] = struct.unpack(e+"2I", f.read(8))
@@ -771,7 +772,7 @@ def parseG1MG(g1mg_chunk,e):
                             lod_block["lodRangeLength"] = 0
                         lods = []
                         for k in range(lod_block["submeshCount1"] + lod_block["submeshCount2"]):
-                            lod = {}
+                            lod = {'id_referenceonly': k}
                             lod["name"] = f.read(16).replace(b'\x00',b'').decode("ASCII")
                             # In Project G1M, clothID is meshType, and NUNID is externalID
                             lod["clothID"], lod["unknown"], lod["NUNID"], lod["indexCount"] = struct.unpack(e+"2H2I", f.read(12))
