@@ -804,25 +804,32 @@ def generate_fmts(model_mesh_metadata):
     # Grab metadata
     vb = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_BUFFERS"][0]
     vb_attr = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_ATTRIBUTES"][0]
+    attr_list = [x['buffer_list'] for x in vb_attr['data']]
     ib = [x for x in model_mesh_metadata['sections'] if x['type'] == "INDEX_BUFFER"][0]
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     vbsubs = find_submeshes(model_mesh_metadata)
     # Generate fmt structures from metadata
     fmts = []
-    for i in range(len(vb['data'])):
+    for i in range(len(vb_attr['data'])):
+        vb_strides = [0] # Add in a dummy first value of 0, so AlignedByteOffset is calculated correctly
+        for j in range(len(vb_attr['data'][i]['buffer_list'])):
+            vb_strides.append(vb['data'][vb_attr['data'][i]['buffer_list'][j]]['stride'])
         fmt_elements = []
         for j in range(len(vb_attr['data'][i]['attributes_list'])):
+            # Input Slot is set to zero, and AlignedByteOffset is set to offset + vb_strides[input slot]
+            # because blender plugin does not support multiple input slots.
             fmt_element = {"id": str(j),
                 "SemanticName": vb_attr['data'][i]['attributes_list'][j]["semantic"],\
                 "SemanticIndex": str(vb_attr['data'][i]['attributes_list'][j]["layer"]),\
                 "Format": vb_attr['data'][i]['attributes_list'][j]["dataType"],\
-                "InputSlot": str(vb_attr['data'][i]['attributes_list'][j]["bufferID"]), # Not sure if correct\
-                "AlignedByteOffset": str(vb_attr['data'][i]['attributes_list'][j]["offset"]),\
+                "InputSlot": '0',
+                "AlignedByteOffset": str(vb_attr['data'][i]['attributes_list'][j]["offset"]\
+                    + vb_strides[vb_attr['data'][i]['attributes_list'][j]["bufferID"]]),\
                 "InputSlotClass": "per-vertex",\
                 "InstanceDataStepRate": "0"}
             fmt_elements.append(fmt_element)
         fmt_struct = {}
-        fmt_struct["stride"] = str(vb['data'][i]['stride'])
+        fmt_struct["stride"] = str(sum(vb_strides))
         #For some reason, topology is stored in submesh instead of vertex attributes
         if subvbs['data'][vbsubs[i][0]]["indexBufferPrimType"] == 1:
             fmt_struct["topology"] = "pointlist" #THRG says this is Quad, dunno what that is, it's not in DX11?
@@ -846,10 +853,22 @@ def generate_ib(index, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
 
 def generate_vb(index, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
     vb = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_BUFFERS"][0]
+    vb_attr = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_ATTRIBUTES"][0]
     if index in range(len(fmts)):
         with io.BytesIO(g1mg_stream) as f:
-            f.seek(vb['data'][index]['offset'])
-            return(read_vb_stream(f.read(int(vb['data'][index]['stride']*vb['data'][index]['count'])), fmts[index], e))
+            if vb['data'][vb_attr['data'][index]['buffer_list'][0]]['count'] > 1:
+                vb_stream = bytes()
+                for i in range(vb['data'][vb_attr['data'][index]['buffer_list'][0]]['count']):
+                    for j in range(len(vb_attr['data'][index]['buffer_list'])):
+                        f.seek(vb['data'][vb_attr['data'][index]['buffer_list'][j]]['offset']\
+                            + (vb['data'][vb_attr['data'][index]['buffer_list'][j]]['stride'] * i))
+                        vb_stream += f.read(vb['data'][vb_attr['data'][index]['buffer_list'][j]]['stride'])
+                vb_struct = read_vb_stream(vb_stream, fmts[index], e)
+            else: # 
+                f.seek(vb['data'][vb_attr['data'][index]['buffer_list'][0]]['offset'])
+                vb_struct = read_vb_stream(f.read(int(vb['data'][vb_attr['data'][index]['buffer_list'][0]]['stride']\
+                    * vb['data'][vb_attr['data'][index]['buffer_list'][0]]['count'])), fmts[index], e)
+            return(vb_struct)
 
 def cull_vb(submesh):
     active_indices = list({x for l in submesh['ib'] for x in l})
