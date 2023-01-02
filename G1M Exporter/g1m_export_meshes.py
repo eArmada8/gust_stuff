@@ -175,7 +175,8 @@ def parseNUNO1(chunkVersion, f, e):
     nuno1_block['influences'] = []
     for i in range(controlPointCount):
         influence = {}
-        influence['P1'], influence['P2'], influence['P3'], influence['P4'], influence['P5'], influence['P6'] = struct.unpack("iiiiff", f.read(24))
+        influence['P1'], influence['P2'], influence['P3'], influence['P4'], influence['P5'],\
+            influence['P6'] = struct.unpack("iiiiff", f.read(24))
         nuno1_block['influences'].append(influence)
     # reading the unknown sections data
     f.seek(48 * unknownSectionCount,1)
@@ -227,7 +228,8 @@ def parseNUNO3(chunkVersion, f, e):
     nuno3_block['influences'] = []
     for i in range(controlPointCount):
         influence = {}
-        influence['P1'], influence['P2'], influence['P3'], influence['P4'], influence['P5'], influence['P6'] = struct.unpack(e+"iiiiff", f.read(24))
+        influence['P1'], influence['P2'], influence['P3'], influence['P4'], influence['P5'],\
+            influence['P6'] = struct.unpack(e+"iiiiff", f.read(24))
         nuno3_block['influences'].append(influence)
     # reading the unknown sections data
     f.seek(48 * unknownSectionCount,1)
@@ -310,7 +312,8 @@ def parseNUNV1(chunkVersion, f, e):
     nunv1_block['influences'] = []
     for i in range(controlPointCount):
         influence = {}
-        influence['P1'], influence['P2'], influence['P3'], influence['P4'], influence['P5'], influence['P6'] = struct.unpack(e+"iiiiff", f.read(24))
+        influence['P1'], influence['P2'], influence['P3'], influence['P4'], influence['P5'],\
+            influence['P6'] = struct.unpack(e+"iiiiff", f.read(24))
         nunv1_block['influences'].append(influence)
     # reading the unknown sections data
     f.seek(48 * unknownSectionCount,1)
@@ -332,7 +335,8 @@ def parseNUNS1(chunkVersion, f, e):
     nuns1_block['influences'] = []
     for i in range(controlPointCount):
         influence = {}
-        influence['P1'], influence['P2'], influence['P3'], influence['P4'], influence['P5'], influence['P6'], influence['P7'], influence['P8'] = struct.unpack(e+"iiiiffii", f.read(24))
+        influence['P1'], influence['P2'], influence['P3'], influence['P4'], influence['P5'], influence['P6'],\
+            influence['P7'], influence['P8'] = struct.unpack(e+"iiiiffii", f.read(24))
         nuns1_block['influences'].append(influence)
     # reading the unknown sections data
     temp = -1
@@ -851,6 +855,16 @@ def generate_ib(index, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
             f.seek(ib['data'][index]['offset'])
             return(read_ib_stream(f.read(int(ib['data'][index]['stride']*ib['data'][index]['count'])), fmts[index], e))
 
+def trianglestrip_to_list(ib_list):
+    triangles = []
+    for i in range(len(ib_list)-2):
+        if i % 2 == 0:
+            triangles.append([ib_list[i], ib_list[i+1], ib_list[i+2]])
+        else:
+            triangles.append([ib_list[i], ib_list[i+2], ib_list[i+1]]) #DirectX implementation
+            #triangles.append([ib_list[i+1], ib_list[i], ib_list[i+2]]) #OpenGL implementation
+    return(triangles)
+
 def generate_vb(index, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
     vb = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_BUFFERS"][0]
     vb_attr = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_ATTRIBUTES"][0]
@@ -898,22 +912,28 @@ def generate_vgmap(boneindex, model_mesh_metadata, skel_data):
         vgmap_json[skel_data['boneList'][bonepalettes['data'][boneindex]['joints'][i]['jointIndex']]['bone_id']] = i * 3
     return(vgmap_json)
 
-def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts, e = '<', cull_vertices = True):
+def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts, e = '<', cull_vertices = True,\
+        preserve_trianglestrip = False):
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     ibindex = subvbs['data'][subindex]['indexBufferIndex']
     vbindex = subvbs['data'][subindex]['vertexBufferIndex']
     boneindex = subvbs['data'][subindex]['bonePaletteIndex']
     submesh = {}
     submesh["fmt"] = fmts[vbindex]
-    # When inputting index buffer offsets, divide by 3 as library returns triplets and g1m uses single index counts
-    submesh["ib"] = generate_ib(ibindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')\
-        [int(subvbs['data'][subindex]['indexBufferOffset']/3):\
-        int((subvbs['data'][subindex]['indexBufferOffset']+subvbs['data'][subindex]['indexCount'])/3)]
+    ib_data = generate_ib(ibindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')
+    # Flatten from 2D to 1D before sectioning.
+    submesh["ib"] = [x for y in ib_data for x in y][int(subvbs['data'][subindex]['indexBufferOffset']):\
+        int(subvbs['data'][subindex]['indexBufferOffset']+subvbs['data'][subindex]['indexCount'])]
+    if submesh["fmt"]["topology"] == "trianglestrip" and preserve_trianglestrip == False:
+        submesh["ib"] = trianglestrip_to_list(submesh["ib"])
+        submesh["fmt"]["topology"] = "trianglelist"
+    else:
+        submesh["ib"] = [[x] for x in submesh["ib"]] # Turn back into 2D list so cull_vertices() works
     submesh["vb"] = generate_vb(vbindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')
     if cull_vertices == True: # Call with False to produce submeshes identical to G1M Tools
         submesh = cull_vb(submesh)
     # Trying to detect if the external skeleton is missing
-    if skel_data['jointCount'] > 1 and not skel_data['boneList'][0]['parentID'] == -2147483648:
+    if skel_data['jointCount'] > 1 and not skel_data['boneList'][0]['parentID'] < -200000000:
         submesh["vgmap"] = generate_vgmap(boneindex, model_mesh_metadata, skel_data)
     else:
         submesh["vgmap"] = False # G1M uses external skeleton that isn't available
@@ -1025,7 +1045,8 @@ def render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_da
     new_fmt = copy.deepcopy(submesh['fmt'])
     new_vb = copy.deepcopy(submesh['vb'])
     submeshinfo = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]["data"][subindex]
-    palette = [x["joints"] for x in [x for x in model_mesh_metadata['sections'] if x['type'] == "JOINT_PALETTES"][0]["data"]][submeshinfo['bonePaletteIndex']]
+    palette = [x["joints"] for x in [x for x in model_mesh_metadata['sections'] if x['type']\
+        == "JOINT_PALETTES"][0]["data"]][submeshinfo['bonePaletteIndex']]
     physicsBoneList = [x["physicsIndex"] & 0xFFFF for x in palette]
     position_data = [x for x in submesh['vb'] if x['SemanticName'] == 'POSITION'][0]['Buffer']
     oldSkinIndiceList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDINDICES'][0]['Buffer']
@@ -1067,7 +1088,8 @@ def render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_da
     else:
         return({'fmt': new_fmt, 'ib': submesh['ib'], 'vb': new_vb, 'vgmap': submesh['vgmap']})
 
-def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True, transform_cloth = True, write_empty_buffers = False):
+def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True,\
+        transform_cloth = True, write_empty_buffers = False, preserve_trianglestrip = False):
     if not nun_maps == False:
         nun_indices = [x['name'][0:4] for x in nun_maps['nun_data']]
         if 'nunv' in nun_indices:
@@ -1080,7 +1102,8 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
     for subindex in range(len(subvbs['data'])):
         print("Processing submesh {0}...".format(subindex))
         submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata,\
-            skel_data, fmts = generate_fmts(model_mesh_metadata), e=e, cull_vertices = cull_vertices)
+            skel_data, fmts = generate_fmts(model_mesh_metadata), e=e, cull_vertices = cull_vertices,\
+            preserve_trianglestrip = preserve_trianglestrip)
         write_fmt(submesh['fmt'],'{0}{1}.fmt'.format(path, subindex))
         if len(submesh['ib']) > 0 or write_empty_buffers == True:
             write_ib(submesh['ib'],'{0}{1}.ib'.format(path, subindex), submesh['fmt'])
@@ -1187,7 +1210,7 @@ def get_ext_skeleton(g1m_name):
                 return False
 
 # The argument passed (g1m_name) is actually the folder name
-def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = True, transform_cloth = transform_cloth_mesh_default, write_empty_buffers = False):
+def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = True, transform_cloth = transform_cloth_mesh_default, write_empty_buffers = False, preserve_trianglestrip = False):
     with open(g1m_name + '.g1m', "rb") as f:
         print("Processing {0}...".format(g1m_name + '.g1m'))
         file = {}
@@ -1263,7 +1286,8 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
             if write_buffers == True:
                 write_submeshes(g1mg_stream, model_mesh_metadata, model_skel_data,\
                     nun_maps, path = g1m_name+'/', e=e, cull_vertices = cull_vertices,\
-                    transform_cloth = transform_cloth, write_empty_buffers = write_empty_buffers)
+                    transform_cloth = transform_cloth, write_empty_buffers = write_empty_buffers,\
+                    preserve_trianglestrip = preserve_trianglestrip)
     return(True)
 
 if __name__ == "__main__":
@@ -1280,7 +1304,9 @@ if __name__ == "__main__":
             parser.add_argument('-s', '--skip_transform', help="Do not transform cloth meshes (4D->3D)", action="store_false")
         else:
             parser.add_argument('-t', '--transform', help="Transform cloth meshes (4D->3D)", action="store_true")
-        parser.add_argument('-e', '--write_empty_buffers', help="Write ib/vb files even if 0 bytes", action="store_false")
+        parser.add_argument('-e', '--write_empty_buffers', help="Write ib/vb files even if 0 bytes", action="store_true")
+        parser.add_argument('-p', '--preserve_trianglestrip',\
+            help="Output original trianglestrip index buffers instead of converting to trianglelist", action="store_true")
         parser.add_argument('g1m_filename', help="Name of g1m file to extract meshes / G1MG metadata (required).")
         args = parser.parse_args()
         if transform_cloth_mesh_default == True:
@@ -1290,7 +1316,8 @@ if __name__ == "__main__":
         if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
             parseG1M(args.g1m_filename[:-4], overwrite = args.overwrite,\
                 write_buffers = args.no_buffers, cull_vertices = args.full_vertices,\
-                transform_cloth = transform_cloth, write_empty_buffers = args.write_empty_buffers)
+                transform_cloth = transform_cloth, write_empty_buffers = args.write_empty_buffers,\
+                preserve_trianglestrip = args.preserve_trianglestrip)
     else:
         # When run without command line arguments, it will attempt to obtain data from all models
         models = []
