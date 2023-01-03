@@ -91,13 +91,13 @@ def build_g1mf(new_g1mg_stream, g1m_name, e = '<'):
         model_mesh_metadata["sections"][mkeys["MATERIALS"]]["count"])
     total_shader_name_len = 0
     for i in range(len(model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["data"])):
-        for j in range(len(model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["data"][i])):
-            namelen = len(model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["data"][i][j]["name"])
+        for j in range(len(model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["data"][i]['shader_block'])):
+            namelen = len(model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["data"][i]['shader_block'][j]["name"])
             total_shader_name_len += namelen + (4 - namelen % 4)
     shader_section_size_minus_countX4_minus_12 = model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["size"]\
         - model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["count"] * 4 - 12
     new_g1mf += struct.pack(e+"4I", model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["count"],\
-        sum([len(x) for x in model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["data"]]),\
+        sum([len(x['shader_block']) for x in model_mesh_metadata["sections"][mkeys["SHADER_PARAMS"]]["data"]]),\
         total_shader_name_len, shader_section_size_minus_countX4_minus_12)
     new_g1mf += struct.pack(e+"I", model_mesh_metadata["sections"][mkeys["VERTEX_BUFFERS"]]["count"])
     # Sum of buffer list is a completely wild guess for "unknownC"
@@ -305,28 +305,28 @@ def build_g1mg(g1m_name, e = '<'):
             elif model_mesh_metadata['sections'][i]['type'] == 'SHADER_PARAMS':
                 shader_section = bytes()
                 for j in range(len(model_mesh_metadata['sections'][i]['data'])):
-                    shader_section += struct.pack(e+"I", len(model_mesh_metadata['sections'][i]['data'][j]))
-                    for k in range(len(model_mesh_metadata['sections'][i]['data'][j])):
-                        shader_name = model_mesh_metadata['sections'][i]['data'][j][k]['name'].encode() + b'\x00'
+                    shader_section += struct.pack(e+"I", len(model_mesh_metadata['sections'][i]['data'][j]['shader_block']))
+                    for k in range(len(model_mesh_metadata['sections'][i]['data'][j]['shader_block'])):
+                        shader_name = model_mesh_metadata['sections'][i]['data'][j]['shader_block'][k]['name'].encode() + b'\x00'
                         while len(shader_name) % 4 > 0:
                             shader_name += b'\x00'
-                        shader_section += struct.pack(e+"3I2H", model_mesh_metadata['sections'][i]['data'][j][k]["size"],\
-                            len(shader_name), model_mesh_metadata['sections'][i]['data'][j][k]["unk1"],\
-                            model_mesh_metadata['sections'][i]['data'][j][k]["buffer_type"],\
-                            model_mesh_metadata['sections'][i]['data'][j][k]["buffer_count"])
+                        shader_section += struct.pack(e+"3I2H", model_mesh_metadata['sections'][i]['data'][j]['shader_block'][k]["size"],\
+                            len(shader_name), model_mesh_metadata['sections'][i]['data'][j]['shader_block'][k]["unk1"],\
+                            model_mesh_metadata['sections'][i]['data'][j]['shader_block'][k]["buffer_type"],\
+                            model_mesh_metadata['sections'][i]['data'][j]['shader_block'][k]["buffer_count"])
                         shader_section += shader_name
-                        for l in range(len(model_mesh_metadata['sections'][i]['data'][j][k]['buffer'])):
-                            match model_mesh_metadata['sections'][i]['data'][j][k]["buffer_type"]:
+                        for l in range(len(model_mesh_metadata['sections'][i]['data'][j]['shader_block'][k]['buffer'])):
+                            match model_mesh_metadata['sections'][i]['data'][j]['shader_block'][k]["buffer_type"]:
                                 case 1:
-                                    shader_section += struct.pack(e+"f", model_mesh_metadata['sections'][i]['data'][j][k]['buffer'][l])
+                                    shader_section += struct.pack(e+"f", model_mesh_metadata['sections'][i]['data'][j]['shader_block'][k]['buffer'][l])
                                 case 2:
-                                    shader_section += struct.pack(e+"2f", *model_mesh_metadata['sections'][i]['data'][j][k]['buffer'][l])
+                                    shader_section += struct.pack(e+"2f", *model_mesh_metadata['sections'][i]['data'][j]['shader_block'][k]['buffer'][l])
                                 case 3:
-                                    shader_section += struct.pack(e+"3f", *model_mesh_metadata['sections'][i]['data'][j][k]['buffer'][l])
+                                    shader_section += struct.pack(e+"3f", *model_mesh_metadata['sections'][i]['data'][j]['shader_block'][k]['buffer'][l])
                                 case 4:
-                                    shader_section += struct.pack(e+"4f", *model_mesh_metadata['sections'][i]['data'][j][k]['buffer'][l])
+                                    shader_section += struct.pack(e+"4f", *model_mesh_metadata['sections'][i]['data'][j]['shader_block'][k]['buffer'][l])
                                 case 5:
-                                    shader_section += struct.pack(e+"i", model_mesh_metadata['sections'][i]['data'][j][k]['buffer'][l])
+                                    shader_section += struct.pack(e+"i", model_mesh_metadata['sections'][i]['data'][j]['shader_block'][k]['buffer'][l])
                 new_g1mg += struct.pack(e+"3I", model_mesh_metadata['sections'][i]['magic'], len(shader_section)+12,\
                     len(model_mesh_metadata['sections'][i]['data'])) + shader_section
             elif model_mesh_metadata['sections'][i]['type'] == 'VERTEX_BUFFERS':
@@ -380,11 +380,11 @@ def build_g1mg(g1m_name, e = '<'):
                 index_stream = io.BytesIO()
                 for j in range(len(composite_vbs)):
                     # This assumes I am reversing my own code, no exotic formats!
-                    index_stream.write(struct.pack(e+"2I", (len(composite_vbs[j]['ib']) * 3), \
+                    index_stream.write(struct.pack(e+"2I", len([x for y in composite_vbs[j]['ib'] for x in y]), \
                         int(composite_vbs[j]['fmt']['format'].split('_FORMAT_R')[1].split('_UINT')[0])))
                     if model_mesh_metadata["version"] > 0x30303430:
                         index_stream.write(struct.pack(e+"I", model_mesh_metadata['sections'][i]['data'][composite_vbs[j]['original_vb_num']]["unknown1"]))
-                    write_ib_stream(composite_vbs[j]['ib'], index_stream, composite_vbs[j]['fmt'], e)
+                    write_ib_stream([x for y in composite_vbs[j]['ib'] for x in y], index_stream, composite_vbs[j]['fmt'], e)
                     while (index_stream.tell() % 4) > 0:
                         index_stream.write(b'\x00')
                 index_stream.seek(0,0)
