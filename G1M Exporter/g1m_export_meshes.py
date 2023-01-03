@@ -31,19 +31,30 @@ def read_pascal_string(f):
     return f.read(sz)
 
 def binary_oid_to_dict(oid_file):
+    headers = []
+    bones = {}
     with open(oid_file, 'rb') as f:
         f_length = f.seek(0,io.SEEK_END)
-        f.seek(0)
-        headers = []
-        bones = {}
-        while f.tell() < f_length:
+        f.seek(-1,2)
+        if f.read(1) == b'\xff': # Gust-style Oid with Pascal strings
+            f.seek(0)
             bone_string = read_pascal_string(f).decode("ASCII")
-            if len(bone_string.split(',')) > 1:
-                bones[int(bone_string.split(',')[0])] = bone_string.split(',')[1]
-            elif len(bone_string.split('ObjectID:')) > 1:
-                oid_file = bone_string.split('ObjectID:')[1]
-            else:
+            if bone_string == "HeaderCharaOid": # New Gust style
                 headers.append(bone_string)
+                while f.tell() < f_length:
+                    bone_string = read_pascal_string(f).decode("ASCII")
+                    if len(bone_string.split(',')) > 1:
+                        bones[int(bone_string.split(',')[0])] = bone_string.split(',')[1]
+                    elif len(bone_string.split('ObjectID:')) > 1:
+                        oid_file = bone_string.split('ObjectID:')[1]
+                    else:
+                        headers.append(bone_string)
+            else: # Old Gust Style
+                f.seek(0)
+                bone_id = 0
+                while f.tell() < f_length:
+                    bones[bone_id] = read_pascal_string(f).decode("ASCII")
+                    bone_id += 1
     return({'oid_file': oid_file, 'headers': headers, 'bones': bones})
 
 def parseG1MS(g1ms_chunk,e):
@@ -1307,8 +1318,6 @@ if __name__ == "__main__":
         else:
             parser.add_argument('-t', '--transform', help="Transform cloth meshes (4D->3D)", action="store_true")
         parser.add_argument('-e', '--write_empty_buffers', help="Write ib/vb files even if 0 bytes", action="store_true")
-        parser.add_argument('-p', '--preserve_trianglestrip',\
-            help="Output original trianglestrip index buffers instead of converting to trianglelist", action="store_true")
         parser.add_argument('g1m_filename', help="Name of g1m file to extract meshes / G1MG metadata (required).")
         args = parser.parse_args()
         if transform_cloth_mesh_default == True:
@@ -1318,8 +1327,7 @@ if __name__ == "__main__":
         if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
             parseG1M(args.g1m_filename[:-4], overwrite = args.overwrite,\
                 write_buffers = args.no_buffers, cull_vertices = args.full_vertices,\
-                transform_cloth = transform_cloth, write_empty_buffers = args.write_empty_buffers,\
-                preserve_trianglestrip = args.preserve_trianglestrip)
+                transform_cloth = transform_cloth, write_empty_buffers = args.write_empty_buffers)
     else:
         # When run without command line arguments, it will attempt to obtain data from all models
         models = []
