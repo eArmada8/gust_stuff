@@ -48,9 +48,6 @@ The default behavior of the exporter is to transform cloth meshes (so-called 4D 
 `-e, --write_empty_buffers`
 The default behavior is to skip empty meshes, since those cause Blender imports to fail.  (Fmt and vgmap files are still written.)  These are detected by empty index buffers.  Using this command will cause the scripts to write the buffers, even if they are empty.
 
-`-p, --preserve_trianglestrip`
-The default behavior is to convert trianglestrip meshes to trianglelist topology, so that they can be imported / exported with the Blender plugin.  Using this option will direct the script to output original trianglestrip index buffers instead of converting to trianglelist.
-
 **Cloth Mesh Transformation Setting:**
 Transforming cloth meshes can be slow.  If you do not have any need for cloth meshes, it would be prudent to disable transformation, either in the command line or (permanently) by editing the python script itself.  There is a line at the top:
 `transform_cloth_mesh_default = True`
