@@ -391,10 +391,15 @@ if __name__ == "__main__":
         if os.path.exists('elixir.json'):
             try:
                 with open('elixir.json','r') as f:
-                    elixir = json.loads(re.sub('0x[0-9a-zA-Z+],','0,',f.read()))
+                    elixir = json.loads(re.sub('0x[0-9a-zA-Z]+','0',f.read()))
                 models = [x for x in elixir['files'] if x[-4:] == '.g1m'][1:]
             except:
                 pass
+        elif os.path.exists('gmpk.json'):
+            if 1:
+                with open('gmpk.json','r') as f:
+                    gmpk = json.loads(re.sub('0x[0-9a-zA-Z]+','0',f.read()))
+                models = [x['name']+'.g1m' for x in gmpk['SDP']['NID']['names']][1:]
         if len(models) > 0:
             for i in range(len(models)):
                 G1M2glTF(models[i][:-4])
