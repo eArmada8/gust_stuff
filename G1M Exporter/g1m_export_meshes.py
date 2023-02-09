@@ -10,7 +10,7 @@
 # /path/to/python3 -m pip install pyquaternion
 #
 # Steps:
-# 1. Use Gust Tools to extract G1M from the .elixir.gz file.
+# 1. Use Gust Tools to extract G1M from the .elixir.gz or gmpk file.
 # 2. Run this script (in the folder with the g1m file).
 #
 # For command line options:
@@ -569,7 +569,10 @@ def calc_nun_maps(nun_data, skel_data):
             clothParentIDMap.append(parentBone)
             driverMeshList.append(driverMesh)
         except:
-            pass
+            # To keep indices correct, we will insert empty data for NUNO2, etc
+            clothMap.append({})
+            clothParentIDMap.append(0)
+            driverMeshList.append({})
     return({'clothMap': clothMap, 'clothParentIDMap': clothParentIDMap, 'driverMeshList': driverMeshList})
 
 def parseG1MG(g1mg_chunk,e):
@@ -1193,8 +1196,12 @@ def parseSkelG1M(g1m_name):
 def get_ext_skeleton(g1m_name):
     if os.path.exists('elixir.json'): # Assuming first g1m is the skeleton
         with open('elixir.json','r') as f:
-            elixir = json.loads(re.sub('0x[0-9a-zA-Z+],','0,',f.read()))
+            elixir = json.loads(re.sub('0x[0-9a-zA-Z]+','0',f.read()))
         ext_skel_model = [x for x in elixir['files'] if x[-4:] == '.g1m'][0][:-4]
+    elif os.path.exists('gmpk.json'): # Assuming first g1m is the skeleton
+        with open('gmpk.json','r') as f:
+            gmpk = json.loads(re.sub('0x[0-9a-zA-Z]+','0',f.read()))
+        ext_skel_model = [x['name'] for x in gmpk['SDP']['NID']['names']][0]
     else:
         ext_skel_model = g1m_name.split("_MODEL_")[0]+'_MODEL' # Assuming single external skeleton
     if os.path.exists(ext_skel_model+'.g1m'):
@@ -1334,10 +1341,17 @@ if __name__ == "__main__":
         if os.path.exists('elixir.json'):
             try:
                 with open('elixir.json','r') as f:
-                    elixir = json.loads(re.sub('0x[0-9a-zA-Z+],','0,',f.read()))
+                    elixir = json.loads(re.sub('0x[0-9a-zA-Z]+','0',f.read()))
                 models = [x for x in elixir['files'] if x[-4:] == '.g1m'][1:]
             except:
                 pass
+        elif os.path.exists('gmpk.json'):
+            if 1:
+                with open('gmpk.json','r') as f:
+                    gmpk = json.loads(re.sub('0x[0-9a-zA-Z]+','0',f.read()))
+                models = [x['name']+'.g1m' for x in gmpk['SDP']['NID']['names']][1:]
+            #except:
+                #pass
         if len(models) > 0:
             for i in range(len(models)):
                 parseG1M(models[i][:-4])
