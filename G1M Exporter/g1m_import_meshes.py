@@ -522,7 +522,10 @@ def process_g1m(g1m_name):
 
 if __name__ == "__main__":
     # Set current directory
-    os.chdir(os.path.abspath(os.path.dirname(__file__)))
+    if getattr(sys, 'frozen', False):
+        os.chdir(os.path.dirname(sys.executable))
+    else:
+        os.chdir(os.path.abspath(os.path.dirname(__file__)))
 
     # If argument given, attempt to import into file in argument
     if len(sys.argv) > 1:

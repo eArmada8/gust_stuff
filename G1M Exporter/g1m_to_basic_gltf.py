@@ -376,7 +376,10 @@ def G1M2glTF(g1m_name, overwrite = False):
 
 if __name__ == "__main__":
     # Set current directory
-    os.chdir(os.path.abspath(os.path.dirname(__file__)))
+    if getattr(sys, 'frozen', False):
+        os.chdir(os.path.dirname(sys.executable))
+    else:
+        os.chdir(os.path.abspath(os.path.dirname(__file__)))
     if len(sys.argv) > 1:
         import argparse
         parser = argparse.ArgumentParser()
