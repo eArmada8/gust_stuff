@@ -31,7 +31,7 @@ class VertexMatch(Operator, ImportHelper):
             + 'Uncheck to select if ANY group is in the map instead', default=True)
     reverse_select: bpy.props.BoolProperty(name="Select if non-matching (reverse select)",\
         description = 'Checking this box will reverse the search results', default=False)
-    combine_maps: bpy.props.BoolProperty(name="Combine multiple VGMaps",\
+    combine_maps: bpy.props.BoolProperty(name="Combine multiple VGMaps into one",\
         description = 'By default, vertices are checked against each map if multiple are selected.  '\
             + 'This combines all maps into one before checking', default=False)
     
