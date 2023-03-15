@@ -31,6 +31,9 @@ class VertexMatch(Operator, ImportHelper):
             + 'Uncheck to select if ANY group is in the map instead', default=True)
     reverse_select: bpy.props.BoolProperty(name="Select if non-matching (reverse select)",\
         description = 'Checking this box will reverse the search results', default=False)
+    combine_maps: bpy.props.BoolProperty(name="Combine multiple VGMaps",\
+        description = 'By default, vertices are checked against each map if multiple are selected.  '\
+            + 'This combines all maps into one before checking', default=False)
     
     def execute(self, context):
         ob = bpy.context.object
@@ -42,7 +45,9 @@ class VertexMatch(Operator, ImportHelper):
             for file in self.files:
                 with open(os.path.join(os.path.dirname(self.filepath),file.name), 'r') as f:
                     vgmapdata = json.loads(f.read())
-                    vgmapbones.extend(vgmapdata.keys())
+                    vgmapbones.append(vgmapdata.keys())
+            if self.combine_maps == True:
+                vgmapbones = [[x for y in vgmapbones for x in y]]
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.mesh.select_mode(type='VERT')
             if self.unselect_if_not_in_vgmap == True:
@@ -50,16 +55,20 @@ class VertexMatch(Operator, ImportHelper):
             bpy.ops.object.mode_set(mode='OBJECT')
             for i in range(len(mesh.data.vertices)):
                 if self.reverse_select == False and self.select_only_if_all_present == True:
-                    if all(x in vgmapbones for x in [vg[x.group] for x in mesh.data.vertices[i].groups]):
+                    if any([all(x in vgmapbones[j] for x in [vg[x.group] for x in mesh.data.vertices[i].groups])\
+                            for j in range(len(vgmapbones))]):
                         mesh.data.vertices[i].select = True
                 elif self.reverse_select == False and self.select_only_if_all_present == False:
-                    if any(x in vgmapbones for x in [vg[x.group] for x in mesh.data.vertices[i].groups]):
+                    if any([any(x in vgmapbones[j] for x in [vg[x.group] for x in mesh.data.vertices[i].groups])\
+                            for j in range(len(vgmapbones))]):
                         mesh.data.vertices[i].select = True
                 elif self.reverse_select == True and self.select_only_if_all_present == True:
-                    if not all(x in vgmapbones for x in [vg[x.group] for x in mesh.data.vertices[i].groups]):
+                    if not any([all(x in vgmapbones[j] for x in [vg[x.group] for x in mesh.data.vertices[i].groups])\
+                            for j in range(len(vgmapbones))]):
                         mesh.data.vertices[i].select = True
                 elif self.reverse_select == True and self.select_only_if_all_present == False:
-                    if not any(x in vgmapbones for x in [vg[x.group] for x in mesh.data.vertices[i].groups]):
+                    if not any([any(x in vgmapbones[j] for x in [vg[x.group] for x in mesh.data.vertices[i].groups])\
+                            for j in range(len(vgmapbones))]):
                         mesh.data.vertices[i].select = True
             bpy.ops.object.mode_set(mode='EDIT')
         return {'FINISHED'}
