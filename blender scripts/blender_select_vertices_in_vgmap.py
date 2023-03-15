@@ -4,7 +4,11 @@
 bl_info = {
     "name": "Select vertices using VGMap",
     "blender": (2, 80, 0),
+    "author": "github.com/eArmada8/gust_stuff",
+    "location": "Edit Mode > Select Menu",
+    "description": "Small tool to select vertices that belong to weight groups detailed in a VGMap.  Only the joint names are used, not the index numbers.",
     "category": "Mesh",
+    "tracker_url": "https://github.com/eArmada8/gust_stuff/issues",
 }
 
 import bpy, os, json
@@ -16,11 +20,16 @@ class VertexMatch(Operator, ImportHelper):
 
     bl_idname = "vgmapfinder.open_filebrowser"
     bl_label = "Select File"
+    bl_description = "Select VGMap file"
     files: CollectionProperty(name = 'File paths', type = bpy.types.OperatorFileListElement)
     filter_glob: StringProperty(default = '*.vgmap', options = {'HIDDEN'})
-    unselect_if_not_in_vgmap: bpy.props.BoolProperty(name="Replace current selection", default=True)
-    select_only_if_all_present: bpy.props.BoolProperty(name="Select vertex only if ALL groups present", default=True)
-    reverse_select: bpy.props.BoolProperty(name="Select if non-matching (reverse select)", default=False)
+    unselect_if_not_in_vgmap: bpy.props.BoolProperty(name = "Replace current selection",\
+        description = 'Default behavior is to replace the current selection, uncheck to add to the current selection instead', default = True)
+    select_only_if_all_present: bpy.props.BoolProperty(name="Select vertex only if ALL groups present", \
+        description = 'Default behavior is to select vertex only if every group it belongs to is present in the VGMap.  '\
+            + 'Uncheck to select if ANY group is in the map instead', default=True)
+    reverse_select: bpy.props.BoolProperty(name="Select if non-matching (reverse select)",\
+        description = 'Checking this box will reverse the search results', default=False)
     
     def execute(self, context):
         ob = bpy.context.object
@@ -57,6 +66,7 @@ class VertexMatch(Operator, ImportHelper):
 class VertexMatchMenu(bpy.types.Operator):
     bl_idname = "object.vertex_match"
     bl_label = "Select vertices using VGMap"
+    bl_description = "Select vertices that belong to weight groups detailed in a VGMap.  Only the joint names are used, not the index numbers"
     bl_options = {'REGISTER', 'UNDO'}
     
     def execute (self, context):
@@ -69,12 +79,12 @@ def menu_func(self, context):
 def register():
     bpy.utils.register_class(VertexMatch)
     bpy.utils.register_class(VertexMatchMenu)
-    bpy.types.VIEW3D_MT_edit_mesh.append(menu_func)
+    bpy.types.VIEW3D_MT_select_edit_mesh.append(menu_func)
 
 def unregister():
     bpy.utils.unregister_class(VertexMatch)
     bpy.utils.unregister_class(VertexMatchMenu)
-    bpy.types.VIEW3D_MT_edit_mesh.remove(menu_func)
+    bpy.types.VIEW3D_MT_select_edit_mesh.remove(menu_func)
 
 if __name__ == "__main__":
     register()
