@@ -2,11 +2,11 @@
 # GitHub eArmada8/gust_stuff
 
 import bpy, os, json
-from bpy.props import StringProperty, BoolProperty
+from bpy.props import StringProperty
 from bpy_extras.io_utils import ImportHelper
 from bpy.types import Operator
 
-class BoneRemover(Operator, ImportHelper):
+class VertexMatch(Operator, ImportHelper):
 
     bl_idname = "vgmapfinder.open_filebrowser"
     bl_label = "Select File"
@@ -38,10 +38,10 @@ class BoneRemover(Operator, ImportHelper):
         return {'FINISHED'}
 
 def register():
-    bpy.utils.register_class(BoneRemover)
+    bpy.utils.register_class(VertexMatch)
 
 def unregister():
-    bpy.utils.unregister_class(BoneRemover)
+    bpy.utils.unregister_class(VertexMatch)
 
 if __name__ == "__main__":
     register()
