@@ -16,13 +16,12 @@ class VertexMatch(Operator, ImportHelper):
 
     bl_idname = "vgmapfinder.open_filebrowser"
     bl_label = "Select File"
-    unselect_if_not_in_vgmap: bpy.props.BoolProperty(name="Unselect non-matching", default=False)
-    files: CollectionProperty(name='File paths', type=bpy.types.OperatorFileListElement)
-    filter_glob: StringProperty(
-        default='*.vgmap',
-        options={'HIDDEN'}
-    )
-
+    files: CollectionProperty(name = 'File paths', type = bpy.types.OperatorFileListElement)
+    filter_glob: StringProperty(default = '*.vgmap', options = {'HIDDEN'})
+    unselect_if_not_in_vgmap: bpy.props.BoolProperty(name="Replace current selection", default=True)
+    select_only_if_all_present: bpy.props.BoolProperty(name="Select vertex only if ALL groups present", default=True)
+    reverse_select: bpy.props.BoolProperty(name="Select if non-matching (reverse select)", default=False)
+    
     def execute(self, context):
         ob = bpy.context.object
         if ob.type == 'MESH':
@@ -40,8 +39,18 @@ class VertexMatch(Operator, ImportHelper):
                 bpy.ops.mesh.select_all(action='DESELECT')
             bpy.ops.object.mode_set(mode='OBJECT')
             for i in range(len(mesh.data.vertices)):
-                if all(x in vgmapbones for x in [vg[x.group] for x in mesh.data.vertices[i].groups]):
-                    mesh.data.vertices[i].select = True
+                if self.reverse_select == False and self.select_only_if_all_present == True:
+                    if all(x in vgmapbones for x in [vg[x.group] for x in mesh.data.vertices[i].groups]):
+                        mesh.data.vertices[i].select = True
+                elif self.reverse_select == False and self.select_only_if_all_present == False:
+                    if any(x in vgmapbones for x in [vg[x.group] for x in mesh.data.vertices[i].groups]):
+                        mesh.data.vertices[i].select = True
+                elif self.reverse_select == True and self.select_only_if_all_present == True:
+                    if not all(x in vgmapbones for x in [vg[x.group] for x in mesh.data.vertices[i].groups]):
+                        mesh.data.vertices[i].select = True
+                elif self.reverse_select == True and self.select_only_if_all_present == False:
+                    if not any(x in vgmapbones for x in [vg[x.group] for x in mesh.data.vertices[i].groups]):
+                        mesh.data.vertices[i].select = True
             bpy.ops.object.mode_set(mode='EDIT')
         return {'FINISHED'}
 
@@ -70,3 +79,4 @@ def unregister():
 if __name__ == "__main__":
     register()
     bpy.ops.vgmapfinder.open_filebrowser('INVOKE_DEFAULT')
+    unregister()
