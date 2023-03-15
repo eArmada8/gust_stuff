@@ -79,4 +79,3 @@ def unregister():
 if __name__ == "__main__":
     register()
     bpy.ops.vgmapfinder.open_filebrowser('INVOKE_DEFAULT')
-    unregister()
