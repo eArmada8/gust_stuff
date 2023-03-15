@@ -21,6 +21,7 @@ class VertexMatch(Operator, ImportHelper):
     bl_idname = "vgmapfinder.open_filebrowser"
     bl_label = "Select File"
     bl_description = "Select VGMap file"
+    bl_options = {'REGISTER', 'UNDO'}
     files: CollectionProperty(name = 'File paths', type = bpy.types.OperatorFileListElement)
     filter_glob: StringProperty(default = '*.vgmap', options = {'HIDDEN'})
     unselect_if_not_in_vgmap: bpy.props.BoolProperty(name = "Replace current selection",\
@@ -67,7 +68,7 @@ class VertexMatchMenu(bpy.types.Operator):
     bl_idname = "object.vertex_match"
     bl_label = "Select vertices using VGMap"
     bl_description = "Select vertices that belong to weight groups detailed in a VGMap.  Only the joint names are used, not the index numbers"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {'REGISTER'}
     
     def execute (self, context):
         bpy.ops.vgmapfinder.open_filebrowser('INVOKE_DEFAULT')
