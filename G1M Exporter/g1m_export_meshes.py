@@ -267,10 +267,14 @@ def parseNUNO5(chunkVersion, f, e, entryIDtoNunoID):
         nuno5_block['parentSetID'] = entryIDtoNunoID[nuno5_block['entryID']]
     f.seek(12,1)
     for i in range(lodCount):
+        skip10Size = 0
+        skip10Count = 0
         controlPointCount, = struct.unpack(e+"I", f.read(4))
-        cpSectionRelatedCount, = struct.unpack(e+"I", f.read(4))
+        flags, = struct.unpack(e+"I", f.read(4))
         skip = struct.unpack(e+"9I", f.read(36))
-        f.seek(4,1)
+        bUseSkip10, = struct.unpack(e+"I", f.read(4))
+        if bUseSkip10:
+            skip10Size, skip10Count = struct.unpack(e+"2I", f.read(8))
         current_offset = f.tell()
         cpOffset, = struct.unpack(e+"I", f.read(4))
         f.seek(current_offset+cpOffset,0)
@@ -291,16 +295,20 @@ def parseNUNO5(chunkVersion, f, e, entryIDtoNunoID):
         else:
             f.seek(44 * controlPointCount,1)
         #Skip physics section
-        f.seek(32 * controlPointCount,1)
-        if (cpSectionRelatedCount == 3):
+        if flags & 0x1:
+            f.seek(32 * controlPointCount,1)
+        if flags & 0x2:
             f.seek(24 * controlPointCount,1)
         f.seek(skip[0] * 4 + skip[1] * 12 + skip[2] * 16 + skip[3] * 12 +\
             skip[4] * 8 + skip[5] * 48 + skip[6] * 72 + skip[7] * 32, 1)
+        if flags & 0x4:
+            f.seek(4 * controlPointCount,1)
         if skip[8] > 0:
             for j in range(skip[8]):
                 current_offset = f.tell()
                 tempCount, = struct.unpack(e+"I", f.read(4))
                 f.seek(current_offset + (4 * tempCount) + 16)
+        f.seek(skip10Size * skip10Count,1)
     return(nuno5_block)
 
 def parseNUNV1(chunkVersion, f, e):
@@ -372,6 +380,8 @@ def parseNUNO(nuno_chunk, e):
             chunk["subchunks"] = []
             entryIDtoNunoID = {}
             if chunk["Type"] in [0x00030001, 0x00030002, 0x00030003, 0x00030005]: # Skip NUNO4, unknown
+                if nuno_section["version"] >= 0x30303335:
+                    f.seek(4,1)
                 for j in range(chunk["subchunk_count"]):
                     if chunk["Type"] == 0x00030001:
                         chunk["subchunks"].append(parseNUNO1(nuno_section["version"],f,e))
@@ -1244,8 +1254,6 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
             print("not G1M!") # Figure this out later
             sys.exit()
         file["file_version"], = struct.unpack(e+"I", f.read(4))
-        if file["file_version"] > 0x30303337:
-            transform_cloth = False
         file["file_size"], = struct.unpack(e+"I", f.read(4))
         chunks = {}
         chunks["starting_offset"], chunks["reserved"], chunks["count"] = struct.unpack(e+"III", f.read(12))

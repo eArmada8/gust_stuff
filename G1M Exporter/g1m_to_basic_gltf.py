@@ -319,8 +319,6 @@ def G1M2glTF(g1m_name, overwrite = False):
             sys.exit()
         transform_cloth = True
         file["file_version"], = struct.unpack(e+"I", f.read(4))
-        if file["file_version"] > 0x30303337:
-            transform_cloth = False
         file["file_size"], = struct.unpack(e+"I", f.read(4))
         chunks = {}
         chunks["starting_offset"], chunks["reserved"], chunks["count"] = struct.unpack(e+"III", f.read(12))
