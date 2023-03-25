@@ -1243,7 +1243,9 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
         else:
             print("not G1M!") # Figure this out later
             sys.exit()
-        file["file_version"] = f.read(4).hex()
+        file["file_version"], = struct.unpack(e+"I", f.read(4))
+        if file["file_version"] > 0x30303337:
+            transform_cloth = False
         file["file_size"], = struct.unpack(e+"I", f.read(4))
         chunks = {}
         chunks["starting_offset"], chunks["reserved"], chunks["count"] = struct.unpack(e+"III", f.read(12))
@@ -1271,13 +1273,13 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
                     if not ext_skel == False:
                         model_skel_data = combine_skeleton(ext_skel, model_skel_data)
                 have_skeleton == True # I guess some games duplicate this section?
-            elif chunk["magic"] in ['NUNO', 'ONUN']: # NUNO
+            elif chunk["magic"] in ['NUNO', 'ONUN'] and transform_cloth == True: # NUNO
                 f.seek(chunk["start_offset"],0)
                 nun_struct["nuno"] = parseNUNO(f.read(chunk["size"]),e)
-            elif chunk["magic"] in ['NUNV', 'VNUN']: # NUNV
+            elif chunk["magic"] in ['NUNV', 'VNUN'] and transform_cloth == True: # NUNV
                 f.seek(chunk["start_offset"],0)
                 nun_struct["nunv"] = parseNUNV(f.read(chunk["size"]),e)
-            elif chunk["magic"] in ['NUNS', 'SNUN']: # NUNS
+            elif chunk["magic"] in ['NUNS', 'SNUN'] and transform_cloth == True: # NUNS
                 f.seek(chunk["start_offset"],0)
                 nun_struct["nuns"] = parseNUNV(f.read(chunk["size"]),e)
             elif chunk["magic"] in ['G1MG', 'GM1G']:
@@ -1288,7 +1290,7 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
                 f.seek(chunk["start_offset"] + chunk["size"],0) # Move to next chunk
             file["chunks"] = chunks
         nun_maps = False
-        if len(nun_struct) > 0 and model_skel_data['jointCount'] > 1:
+        if len(nun_struct) > 0 and model_skel_data['jointCount'] > 1 and transform_cloth == True:
             nun_data = stack_nun(nun_struct)
             nun_maps = calc_nun_maps(nun_data, model_skel_data)
             if not nun_maps == False:
