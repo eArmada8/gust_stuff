@@ -263,7 +263,7 @@ def parseNUNO5(chunkVersion, f, e, entryIDtoNunoID):
     lodCount, = struct.unpack(e+"I", f.read(4))
     f.seek(8,1)
     nuno5_block['entryID'], nuno5_block['entryIDflag'] = struct.unpack(e+"2H", f.read(4))
-    if nuno5_block['entryIDflag'] & 0x7FF:
+    if (nuno5_block['entryID'] in entryIDtoNunoID) and (nuno5_block['entryIDflag'] & 0x7FF):
         nuno5_block['parentSetID'] = entryIDtoNunoID[nuno5_block['entryID']]
     f.seek(12,1)
     for i in range(lodCount):
@@ -965,6 +965,7 @@ def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts
     return(submesh)
 
 def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', remove_physics = False):
+    semantic_names = [x['SemanticName'] for x in submesh['vb']]
     is_nuno5 = (nun_maps['nun_data'][NUNID]['name'] == 'nuno5')
     # NUNO5 subset code will go here eventually
     new_fmt = copy.deepcopy(submesh['fmt'])
@@ -981,7 +982,10 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
     clothStuff4Buffer = [x[3] for x in normal_data]
     clothStuff5Buffer = [x for x in submesh['vb'] if x['SemanticName'] == 'COLOR' and int(x['SemanticIndex']) != 0][0]['Buffer']
     #colorBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'COLOR' and int(x['SemanticIndex']) == 0][0]['Buffer']
-    tangent_data = [x for x in submesh['vb'] if x['SemanticName'] == 'TANGENT'][0]['Buffer']
+    if 'TANGENT' in semantic_names:
+        tangent_data = [x for x in submesh['vb'] if x['SemanticName'] == 'TANGENT'][0]['Buffer']
+    else:
+        tangent_data = False
     binormalBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'BINORMAL'][0]['Buffer']
     fogBuffer = [x for x in submesh['vb'] if x['SemanticName'] == 'FOG'][0]['Buffer']
     vertPosBuff = []
@@ -992,7 +996,8 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
         if binormalBuffer[i] == [0,0,0,0]:
             vertPosBuff.append((Quaternion(clothParentBone['abs_q']).rotate(position_data[i][0:3]) + numpy.array(clothParentBone['abs_p'])).tolist())
             vertNormBuff.append(normal_data[i])
-            tangentBuffer.append(tangent_data[i])
+            if tangent_data:
+                tangentBuffer.append(tangent_data[i])
         else:
             clothPosition = position_data[i]
             position = [0,0,0]
@@ -1014,8 +1019,9 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
             d = numpy.cross(b,c)
             vertNormBuff.append(b * normal_data[i][1] + c * normal_data[i][0] + d * normal_data[i][2])
             vertNormBuff[-1] = (vertNormBuff[-1] / numpy.linalg.norm(vertNormBuff[-1])).tolist()
-            tangentBuffer.append(b * tangent_data[i][1] + c * tangent_data[i][0] + d * tangent_data[i][2])
-            tangentBuffer[-1] = (tangentBuffer[-1] / numpy.linalg.norm(tangentBuffer[-1])).tolist() + [tangent_data[i][3]]
+            if tangent_data:
+                tangentBuffer.append(b * tangent_data[i][1] + c * tangent_data[i][0] + d * tangent_data[i][2])
+                tangentBuffer[-1] = (tangentBuffer[-1] / numpy.linalg.norm(tangentBuffer[-1])).tolist() + [tangent_data[i][3]]
             if is_nuno5:
                 d = (d / numpy.linalg.norm(d))
             vertPosBuff.append((d * clothStuff4Buffer[i] + a).tolist())
@@ -1040,15 +1046,16 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
     new_fmt['stride'] = str(int(new_fmt['stride']) + 12)
     new_vb.append({'SemanticName': 'NORMAL', 'SemanticIndex': '0', 'Buffer': vertNormBuff})
     #Tangent
-    original_tng_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'TANGENT'][0]['id'])
-    new_tng_fmt = len(new_fmt['elements'])
-    new_fmt['elements'].append(copy.deepcopy(new_fmt['elements'][original_tng_fmt]))
-    new_fmt['elements'][original_tng_fmt]['SemanticName'] = '4D_TANGENT'
-    new_fmt['elements'][new_tng_fmt]['id'] = str(new_tng_fmt)
-    new_fmt['elements'][new_tng_fmt]['Format'] = "R32G32B32A32_FLOAT"
-    new_fmt['elements'][new_tng_fmt]['AlignedByteOffset'] = copy.deepcopy(new_fmt['stride'])
-    new_fmt['stride'] = str(int(new_fmt['stride']) + 16)
-    new_vb.append({'SemanticName': 'TANGENT', 'SemanticIndex': '0', 'Buffer': tangentBuffer})
+    if tangent_data:
+        original_tng_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'TANGENT'][0]['id'])
+        new_tng_fmt = len(new_fmt['elements'])
+        new_fmt['elements'].append(copy.deepcopy(new_fmt['elements'][original_tng_fmt]))
+        new_fmt['elements'][original_tng_fmt]['SemanticName'] = '4D_TANGENT'
+        new_fmt['elements'][new_tng_fmt]['id'] = str(new_tng_fmt)
+        new_fmt['elements'][new_tng_fmt]['Format'] = "R32G32B32A32_FLOAT"
+        new_fmt['elements'][new_tng_fmt]['AlignedByteOffset'] = copy.deepcopy(new_fmt['stride'])
+        new_fmt['stride'] = str(int(new_fmt['stride']) + 16)
+        new_vb.append({'SemanticName': 'TANGENT', 'SemanticIndex': '0', 'Buffer': tangentBuffer})
     if remove_physics == True:
         semantics_to_keep = ['POSITION', 'BLENDWEIGHT', 'BLENDINDICES', 'NORMAL', 'COLOR', 'TEXCOORD', 'TANGENT']
         simple_fmt = {'stride': '0', 'topology': new_fmt['topology'], 'format': new_fmt['format'], 'elements': []}

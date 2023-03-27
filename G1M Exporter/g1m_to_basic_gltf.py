@@ -213,7 +213,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
                     submesh = fix_weight_groups(submesh)
                 except:
                     skip_weights = True # Certain models do not have weights at all
-                if not submesh_lod['clothID'] == 0:
+                if not submesh_lod['clothID'] == 0 and 'TANGENT' in [x['SemanticName'] for x in submesh['vb']]:
                     submesh = fix_tangent_length(submesh) # Needed for cloth meshes, I have no idea why
                 gltf_fmt = convert_fmt_for_gltf(submesh['fmt'])
                 vb_stream = io.BytesIO()
