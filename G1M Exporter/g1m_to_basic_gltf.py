@@ -1,5 +1,5 @@
 # Very basic glTF builder for G1M files, mostly working now for its intended purpose (skeletal rigging
-# of extracted meshes from g1m_export_meshes.py) although it still has bugs.
+# of extracted meshes from g1m_export_meshes.py).
 #
 # Based primarily off the work of GitHub/Joschuka and GitHub/three-houses-research-team,
 # huge thank you!  Also many thanks to eterniti for sharing code with me to reference.
@@ -8,6 +8,8 @@
 # This code depends on g1m_export_meshes.py, g1m_import_meshes.py and lib_fmtibvb.py being in the same folder.
 #
 # This code requires both numpy and pyquaternion for skeletal manipulation.
+#
+# For materials, it will read g1t.json if present in the same directory.
 #
 # These can be installed by:
 # /path/to/python3 -m pip install pyquaternion
@@ -143,10 +145,40 @@ def fix_tangent_length(submesh):
             (submesh['vb'][tangent_element_index]['Buffer'][i][0:3] / numpy.linalg.norm(submesh['vb'][tangent_element_index]['Buffer'][i][0:3])).tolist()
     return(submesh)
 
-def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_maps, e = '<'):
+def generate_materials(gltf_data, model_mesh_metadata, metadata_sections):
+    materials = model_mesh_metadata['sections'][metadata_sections['MATERIALS']]['data']
+    if os.path.exists('g1t.json'):
+        with open('g1t.json','rb') as jf:
+            g1t_data = json.loads(re.sub('0x[0-9a-fA-F]+', (lambda x: str(int(x.group()[2:],16))), jf.read().decode('utf-8')))
+        images = [x['name'] for x in g1t_data['textures']]
+    else:
+        # Making an assumption here that all images are the number and .dds, since g1t.json is not available
+        images = sorted(list(set(['{0}.dds'.format(str(x['id']).zfill(3)) for y in materials for x in y['textures']])))
+    gltf_data['images'] = [{'uri':x} for x in images]
+    for i in range(len(materials)):
+        material = {}
+        for j in range(len(materials[i]['textures'])):
+            sampler = { 'wrapS': 10497, 'wrapT': 10497 } # It seems like wrap is the only type used, according to THRG?
+            texture = { 'source': materials[i]['textures'][j]['id'], 'sampler': len(gltf_data['samplers']) }
+            if materials[i]['textures'][j]['type'] == 1:
+                material['pbrMetallicRoughness']= { 'baseColorTexture' : { 'index' : len(gltf_data['textures']) },\
+                    'metallicFactor' : 0.0, 'roughnessFactor' : 1.0 }
+            elif materials[i]['textures'][j]['type'] == 3:
+                material['normalTexture'] =  { 'index' : len(gltf_data['textures']), 'texCoord': materials[i]['textures'][j]['layer'] }
+            elif materials[i]['textures'][j]['type'] == 5:
+                material['occlusionTexture'] =  { 'index' : len(gltf_data['textures']), 'texCoord': materials[i]['textures'][j]['layer'] }
+            elif materials[i]['textures'][j]['type'] == 2:
+                material['emissiveTexture'] =  { 'index' : len(gltf_data['textures']), 'texCoord': materials[i]['textures'][j]['layer'] }
+            gltf_data['samplers'].append(sampler)
+            gltf_data['textures'].append(texture)
+        gltf_data['materials'].append(material)
+    return(gltf_data)
+
+def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_maps, e = '<', keep_color = False):
     # Trying to detect if the external skeleton is missing
+    metadata_sections = {model_mesh_metadata['sections'][i]['type']:i for i in range(len(model_mesh_metadata['sections']))}
     skel_present = model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] == -2147483648
-    subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
+    subvbs = model_mesh_metadata['sections'][metadata_sections['SUBMESH']]
     if not nun_maps == False:
         nun_indices = [x['name'][0:4] for x in nun_maps['nun_data']]
         if 'nunv' in nun_indices:
@@ -160,15 +192,21 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
     gltf_data['accessors'] = []
     gltf_data['bufferViews'] = []
     gltf_data['buffers'] = []
+    gltf_data['images'] = []
+    gltf_data['materials'] = []
     gltf_data['meshes'] = []
     gltf_data['nodes'] = []
+    gltf_data['samplers'] = []
     gltf_data['scenes'] = [{}]
     gltf_data['scenes'][0]['nodes'] = [0]
     gltf_data['scene'] = 0
     gltf_data['skins'] = []
+    gltf_data['textures'] = []
     giant_buffer = bytes()
     mesh_nodes = []
     buffer_view = 0
+    if 'MATERIALS' in metadata_sections:
+        gltf_data = generate_materials(gltf_data, model_mesh_metadata, metadata_sections)
     for i in range(len(model_skel_data['boneList'])):
         try: # NUN bones should be skipped
             node = {'children': [], 'name': model_skel_data['boneList'][i]['bone_id']}
@@ -272,6 +310,11 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
                     primitive["mode"] = 5 #TRIANGLE_STRIP
                 else:
                     primitive["mode"] = 0 #POINTS
+                if subvbs['data'][subindex]['materialIndex'] < len(gltf_data['materials']):
+                    primitive["material"] = subvbs['data'][subindex]['materialIndex']
+                    if not keep_color:
+                        # Remove vertex colors, as g1m does not actually use this semantic for vertex colors (it is for cloth transform)
+                        primitive["attributes"] = {k:v for (k,v) in primitive["attributes"].items() if not 'COLOR' in k}
                 mesh_nodes.append(len(gltf_data['nodes']))
                 gltf_data['nodes'].append({'mesh': len(gltf_data['meshes']), 'name': "Mesh_{0}".format(subindex)})
                 gltf_data['meshes'].append({"primitives": [primitive], "name": "Mesh_{0}".format(subindex)})
@@ -304,7 +347,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
         f.write(json.dumps(gltf_data, indent=4).encode("utf-8"))
 
 # The argument passed (g1m_name) is actually the folder name
-def G1M2glTF(g1m_name, overwrite = False):
+def G1M2glTF(g1m_name, overwrite = False, keep_color = False):
     with open(g1m_name + '.g1m', "rb") as f:
         print("Processing {0}...".format(g1m_name + '.g1m'))
         file = {}
@@ -372,7 +415,7 @@ def G1M2glTF(g1m_name, overwrite = False):
             if str(input(g1m_name + ".gltf exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
                 overwrite = True
         if (overwrite == True) or not os.path.exists(g1m_name + '.gltf'):
-            write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_maps, e=e)
+            write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_maps, e=e, keep_color = keep_color)
     return(True)
 
 if __name__ == "__main__":
@@ -385,10 +428,11 @@ if __name__ == "__main__":
         import argparse
         parser = argparse.ArgumentParser()
         parser.add_argument('-o', '--overwrite', help="Overwrite existing files", action="store_true")
+        parser.add_argument('-k', '--keep_color', help="Preserve vertex color attribute", action="store_true")
         parser.add_argument('g1m_filename', help="Name of g1m file to build glTF (required).")
         args = parser.parse_args()
         if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
-            G1M2glTF(args.g1m_filename[:-4], overwrite = args.overwrite)
+            G1M2glTF(args.g1m_filename[:-4], overwrite = args.overwrite, keep_color = args.keep_color)
     else:
         # When run without command line arguments, it will attempt to obtain data from all models
         models = []
