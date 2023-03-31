@@ -147,9 +147,13 @@ def fix_tangent_length(submesh):
 
 def generate_materials(gltf_data, model_mesh_metadata, metadata_sections):
     materials = model_mesh_metadata['sections'][metadata_sections['MATERIALS']]['data']
-    with open('g1t.json','rb') as jf:
-        g1t_data = json.loads(re.sub('0x[0-9a-fA-F]+', (lambda x: str(int(x.group()[2:],16))), jf.read().decode('utf-8')))
-    images = [x['name'] for x in g1t_data['textures']]
+    if os.path.exists('g1t.json'):
+        with open('g1t.json','rb') as jf:
+            g1t_data = json.loads(re.sub('0x[0-9a-fA-F]+', (lambda x: str(int(x.group()[2:],16))), jf.read().decode('utf-8')))
+        images = [x['name'] for x in g1t_data['textures']]
+    else:
+        # Making an assumption here that all images are the number and .dds, since g1t.json is not available
+        images = ['{0}.dds'.format(str(i).zfill(3)) for i in range(max([x['id'] for y in materials for x in y['textures']])+1)]
     gltf_data['images'] = [{'uri':x} for x in images]
     for i in range(len(materials)):
         material = {}
@@ -201,7 +205,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
     giant_buffer = bytes()
     mesh_nodes = []
     buffer_view = 0
-    if 'MATERIALS' in metadata_sections and os.path.exists('g1t.json'):
+    if 'MATERIALS' in metadata_sections:
         gltf_data = generate_materials(gltf_data, model_mesh_metadata, metadata_sections)
     for i in range(len(model_skel_data['boneList'])):
         try: # NUN bones should be skipped
