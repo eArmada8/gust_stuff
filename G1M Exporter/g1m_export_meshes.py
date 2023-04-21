@@ -375,46 +375,47 @@ def parseNUNO(nuno_chunk, e):
         nuno_section["version"], nuno_section["size"], nuno_section["chunk_count"], = struct.unpack(e+"III", f.read(12))
         nuno_section["chunks"] = []
         for i in range(nuno_section["chunk_count"]):
-            chunk = {}
-            chunk["Type"],chunk["size"],chunk["subchunk_count"] = struct.unpack(e+"III", f.read(12))
-            chunk["subchunks"] = []
-            entryIDtoNunoID = {}
-            if chunk["Type"] in [0x00030001, 0x00030002, 0x00030003, 0x00030005]: # Skip NUNO4, unknown
-                if nuno_section["version"] >= 0x30303335:
-                    f.seek(4,1)
-                for j in range(chunk["subchunk_count"]):
-                    if chunk["Type"] == 0x00030001:
-                        chunk["subchunks"].append(parseNUNO1(nuno_section["version"],f,e))
-                    elif chunk["Type"] == 0x00030002:
-                        chunk["subchunks"].append(parseNUNO2(nuno_section["version"],f,e))
-                    elif chunk["Type"] == 0x00030003:
-                        chunk["subchunks"].append(parseNUNO3(nuno_section["version"],f,e))
-                    elif chunk["Type"] == 0x00030005:
-                        chunk["subchunks"].append(parseNUNO5(nuno_section["version"],f,e, entryIDtoNunoID))
-                        if not chunk["subchunks"][-1]["entryID"] in entryIDtoNunoID.keys():
-                            entryIDtoNunoID[chunk["subchunks"][-1]["entryID"]] = j
-            else:
-                f.seek(chunk["size"],1)
-            if chunk["Type"] == 0x00030005:
-                # Untested, the model I have access to does not have subsets
-                nunoIDToSubsetMap = {}
-                for j in range(len(chunk["subchunks"])):
-                    if chunk["subchunks"][j]["parentSetID"] >= 0:
-                        if not (chunk["subchunks"][j]["parentSetID"] in nunoIDToSubsetMap.keys()):
-                        # New Map
-                            tempMap = {}
-                            parentchunk = chunk["subchunks"][chunk["subchunks"][j]["parentSetID"]]
-                            for k in range(len(parentchunk["controlPoints"])):
-                                tempMap[sum(parentchunk["controlPoints"][i])] = k
-                            nunoIDToSubsetMap[chunk["subchunks"][j]["parentSetID"]] = tempMap
-                        else:
-                        #Existing Map
-                            tempMap = nunoIDToSubsetMap[chunk["subchunks"][j]["parentSetID"]]
-                            for k in range(len(chunk["subchunks"][j]["controlPoints"])):
-                                if sum(chunk["subchunks"][j]["controlPoints"][k]) in tempMap.keys(): #should always be true?
-                                    chunk["subchunks"][j]["influences"][k]['P1'] = \
-                                        tempMap[sum(chunk["subchunks"][j]["controlPoints"][k])]
-            nuno_section["chunks"].append(chunk)
+            if f.tell() < len(nuno_chunk):
+                chunk = {}
+                chunk["Type"],chunk["size"],chunk["subchunk_count"] = struct.unpack(e+"III", f.read(12))
+                chunk["subchunks"] = []
+                entryIDtoNunoID = {}
+                if chunk["Type"] in [0x00030001, 0x00030002, 0x00030003, 0x00030005]: # Skip NUNO4, unknown
+                    if nuno_section["version"] >= 0x30303335:
+                        f.seek(4,1)
+                    for j in range(chunk["subchunk_count"]):
+                        if chunk["Type"] == 0x00030001:
+                            chunk["subchunks"].append(parseNUNO1(nuno_section["version"],f,e))
+                        elif chunk["Type"] == 0x00030002:
+                            chunk["subchunks"].append(parseNUNO2(nuno_section["version"],f,e))
+                        elif chunk["Type"] == 0x00030003:
+                            chunk["subchunks"].append(parseNUNO3(nuno_section["version"],f,e))
+                        elif chunk["Type"] == 0x00030005:
+                            chunk["subchunks"].append(parseNUNO5(nuno_section["version"],f,e, entryIDtoNunoID))
+                            if not chunk["subchunks"][-1]["entryID"] in entryIDtoNunoID.keys():
+                                entryIDtoNunoID[chunk["subchunks"][-1]["entryID"]] = j
+                else:
+                    f.seek(chunk["size"],1)
+                if chunk["Type"] == 0x00030005:
+                    # Untested, the model I have access to does not have subsets
+                    nunoIDToSubsetMap = {}
+                    for j in range(len(chunk["subchunks"])):
+                        if chunk["subchunks"][j]["parentSetID"] >= 0:
+                            if not (chunk["subchunks"][j]["parentSetID"] in nunoIDToSubsetMap.keys()):
+                            # New Map
+                                tempMap = {}
+                                parentchunk = chunk["subchunks"][chunk["subchunks"][j]["parentSetID"]]
+                                for k in range(len(parentchunk["controlPoints"])):
+                                    tempMap[sum(parentchunk["controlPoints"][i])] = k
+                                nunoIDToSubsetMap[chunk["subchunks"][j]["parentSetID"]] = tempMap
+                            else:
+                            #Existing Map
+                                tempMap = nunoIDToSubsetMap[chunk["subchunks"][j]["parentSetID"]]
+                                for k in range(len(chunk["subchunks"][j]["controlPoints"])):
+                                    if sum(chunk["subchunks"][j]["controlPoints"][k]) in tempMap.keys(): #should always be true?
+                                        chunk["subchunks"][j]["influences"][k]['P1'] = \
+                                            tempMap[sum(chunk["subchunks"][j]["controlPoints"][k])]
+                nuno_section["chunks"].append(chunk)
     return(nuno_section)
 
 def parseNUNV(nuno_chunk, e):
@@ -1081,7 +1082,10 @@ def render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_da
         == "JOINT_PALETTES"][0]["data"]][submeshinfo['bonePaletteIndex']]
     physicsBoneList = [x["physicsIndex"] & 0xFFFF for x in palette]
     position_data = [x for x in submesh['vb'] if x['SemanticName'] == 'POSITION'][0]['Buffer']
-    oldSkinIndiceList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDINDICES'][0]['Buffer']
+    if 'BLENDINDICES' in [x['SemanticName'] for x in submesh['vb']]:
+        oldSkinIndiceList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDINDICES'][0]['Buffer']
+    else:
+        oldSkinIndiceList = [[0,0,0,0] for x in range(len(submesh['vb'][0]['Buffer']))]
     vertPosBuff = []
     jointIndexBuff = []
     for i in range(len(position_data)):
