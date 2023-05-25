@@ -205,6 +205,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
     giant_buffer = bytes()
     mesh_nodes = []
     buffer_view = 0
+    cloth_render_fail = False
     if 'MATERIALS' in metadata_sections:
         gltf_data = generate_materials(gltf_data, model_mesh_metadata, metadata_sections)
     for i in range(len(model_skel_data['boneList'])):
@@ -233,16 +234,21 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
             primitive = {"attributes":{}}
             fmts = generate_fmts(model_mesh_metadata) # Refresh FMT every time, to dereference
             submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata, model_skel_data, fmts, e=e, cull_vertices = True, preserve_trianglestrip = True)
-            if submesh_lod['clothID'] == 1 and not nun_maps == False:
-                print("Performing cloth mesh (4D) transformation...".format(subindex))
-                if (submesh_lod['NUNID']) >= 10000 and (submesh_lod['NUNID'] < 20000):
-                    NUNID = (submesh_lod['NUNID'] % 10000) + nunv_offset
-                else:
-                    NUNID = submesh_lod['NUNID'] % 10000
-                submesh = render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e=e, remove_physics = True)
-            if submesh_lod['clothID'] == 2:
-                print("Performing cloth mesh (4D) transformation...".format(subindex))
-                submesh = render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_data, remove_physics = True)
+            if cloth_render_fail == False:
+                try:
+                    if submesh_lod['clothID'] == 1 and not nun_maps == False:
+                        print("Performing cloth mesh (4D) transformation...".format(subindex))
+                        if (submesh_lod['NUNID']) >= 10000 and (submesh_lod['NUNID'] < 20000):
+                            NUNID = (submesh_lod['NUNID'] % 10000) + nunv_offset
+                        else:
+                            NUNID = submesh_lod['NUNID'] % 10000
+                        submesh = render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e=e, remove_physics = True)
+                    if submesh_lod['clothID'] == 2:
+                        print("Performing cloth mesh (4D) transformation...".format(subindex))
+                        submesh = render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_data, remove_physics = True)
+                except:
+                    cloth_render_fail = True
+                    print("Rendering cloth mesh failed!  Cloth mesh rendering will be skipped.")
             # Skip empty submeshes
             if len(submesh['ib']) > 0:
                 skip_weights = False
@@ -368,6 +374,7 @@ def G1M2glTF(g1m_name, overwrite = False, keep_color = False):
         chunks["chunks"] = []
         f.seek(chunks["starting_offset"])
         have_skeleton = False
+        nun_parse_fail = False
         for i in range(chunks["count"]):
             chunk = {}
             chunk["start_offset"] = f.tell()
@@ -389,15 +396,19 @@ def G1M2glTF(g1m_name, overwrite = False, keep_color = False):
                     if not ext_skel == False:
                         model_skel_data = combine_skeleton(ext_skel, model_skel_data)
                 have_skeleton == True # I guess some games duplicate this section?
-            elif chunk["magic"] in ['NUNO', 'ONUN'] and transform_cloth == True: # NUNO
-                f.seek(chunk["start_offset"],0)
-                nun_struct["nuno"] = parseNUNO(f.read(chunk["size"]),e)
-            elif chunk["magic"] in ['NUNV', 'VNUN'] and transform_cloth == True: # NUNV
-                f.seek(chunk["start_offset"],0)
-                nun_struct["nunv"] = parseNUNV(f.read(chunk["size"]),e)
-            elif chunk["magic"] in ['NUNS', 'SNUN'] and transform_cloth == True: # NUNS
-                f.seek(chunk["start_offset"],0)
-                nun_struct["nuns"] = parseNUNV(f.read(chunk["size"]),e)
+            elif chunk["magic"] in ['NUNO', 'ONUN', 'NUNV', 'VNUN', 'NUNS', 'SNUN'] and transform_cloth == True:
+                try:
+                    f.seek(chunk["start_offset"],0)
+                    if chunk["magic"] in ['NUNO', 'ONUN']: # NUNO
+                        nun_struct["nuno"] = parseNUNO(f.read(chunk["size"]),e)
+                    elif chunk["magic"] in ['NUNV', 'VNUN']: # NUNV
+                        nun_struct["nunv"] = parseNUNV(f.read(chunk["size"]),e)
+                    elif chunk["magic"] in ['NUNS', 'SNUN']: # NUNS
+                        nun_struct["nuns"] = parseNUNS(f.read(chunk["size"]),e)
+                except:
+                    nun_parse_fail = True
+                    print("Parsing cloth mesh NUN data failed!  Cloth mesh rendering will be skipped.")
+                    f.seek(chunk["start_offset"] + chunk["size"],0)
             elif chunk["magic"] in ['G1MG', 'GM1G']:
                 f.seek(chunk["start_offset"],0)
                 g1mg_stream = f.read(chunk["size"])
@@ -407,10 +418,13 @@ def G1M2glTF(g1m_name, overwrite = False, keep_color = False):
             file["chunks"] = chunks
         nun_maps = False
         if len(nun_struct) > 0 and model_skel_data['jointCount'] > 1 and transform_cloth == True:
-            nun_data = stack_nun(nun_struct)
-            nun_maps = calc_nun_maps(nun_data, model_skel_data)
-            if not nun_maps == False:
-                nun_maps['nun_data'] = nun_data
+            try:
+                nun_data = stack_nun(nun_struct)
+                nun_maps = calc_nun_maps(nun_data, model_skel_data)
+                if not nun_maps == False:
+                    nun_maps['nun_data'] = nun_data
+            except:
+                print("Compiling cloth mesh NUN data failed!  Cloth mesh rendering will be skipped.")
         if os.path.exists(g1m_name + '.gltf') and (overwrite == False):
             if str(input(g1m_name + ".gltf exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
                 overwrite = True
@@ -435,19 +449,20 @@ if __name__ == "__main__":
             G1M2glTF(args.g1m_filename[:-4], overwrite = args.overwrite, keep_color = args.keep_color)
     else:
         # When run without command line arguments, it will attempt to obtain data from all models
+        current_dir_g1m_files = glob.glob('*.g1m')
         models = []
         if os.path.exists('elixir.json'):
             try:
                 with open('elixir.json','r') as f:
                     elixir = json.loads(re.sub('0x[0-9a-zA-Z]+','0',f.read()))
-                models = [x for x in elixir['files'] if x[-4:] == '.g1m'][1:]
+                models = [x for x in elixir['files'] if x[-4:] == '.g1m' and x in current_dir_g1m_files][1:]
             except:
                 pass
         elif os.path.exists('gmpk.json'):
             if 1:
                 with open('gmpk.json','r') as f:
                     gmpk = json.loads(re.sub('0x[0-9a-zA-Z]+','0',f.read()))
-                models = [x['name']+'.g1m' for x in gmpk['SDP']['NID']['names']][1:]
+                models = [x['name']+'.g1m' for x in gmpk['SDP']['NID']['names'] if x['name']+'.g1m' in current_dir_g1m_files][1:]
         if len(models) > 0:
             for i in range(len(models)):
                 G1M2glTF(models[i][:-4])
