@@ -1132,6 +1132,7 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
             nunv_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nunv')
         if 'nuns' in nun_indices:
             nuns_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nuns')
+    cloth_render_fail = False
     driverMesh_fmt = make_drivermesh_fmt()
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     lod_data = [x for x in model_mesh_metadata["sections"] if x['type'] == 'MESH_LOD'][0]
@@ -1148,32 +1149,37 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
             with open('{0}{1}.vgmap'.format(path, subindex), 'wb') as f:
                 f.write(json.dumps(submesh['vgmap'], indent=4).encode("utf-8"))
         submesh_lod = [x for x in lod_data['data'][0]['lod'] if subindex in x['indices']][0]
-        if submesh_lod['clothID'] == 1 and not nun_maps == False and transform_cloth == True:
-            print("Performing cloth mesh (4D) transformation...".format(subindex))
-            if (submesh_lod['NUNID']) >= 10000 and (submesh_lod['NUNID'] < 20000):
-                NUNID = (submesh_lod['NUNID'] % 10000) + nunv_offset
-            else:
-                NUNID = submesh_lod['NUNID'] % 10000
-            transformed_submesh = render_cloth_submesh(submesh, NUNID, skel_data, nun_maps, e=e)
-            write_fmt(transformed_submesh['fmt'],'{0}{1}_transformed.fmt'.format(path, subindex))
-            if len(transformed_submesh['ib']) > 0 or write_empty_buffers == True:
-                write_ib(transformed_submesh['ib'],'{0}{1}_transformed.ib'.format(path, subindex), transformed_submesh['fmt'])
-                write_vb(transformed_submesh['vb'],'{0}{1}_transformed.vb'.format(path, subindex), transformed_submesh['fmt'])
-            if not transformed_submesh["vgmap"] == False:
-                with open('{0}{1}_transformed.vgmap'.format(path, subindex), 'wb') as f:
-                    f.write(json.dumps(transformed_submesh['vgmap'], indent=4).encode("utf-8"))
-            drivermesh = nun_maps['driverMeshList'][NUNID]
-            write_fmt(driverMesh_fmt,'{0}{1}_drivermesh.fmt'.format(path, subindex))
-            if len(transformed_submesh['ib']) > 0 or write_empty_buffers == True:
-                write_ib(drivermesh['indices'],'{0}{1}_drivermesh.ib'.format(path, subindex), driverMesh_fmt)
-                write_vb(drivermesh['vertices'],'{0}{1}_drivermesh.vb'.format(path, subindex), driverMesh_fmt)
-        if submesh_lod['clothID'] == 2 and transform_cloth == True:
-            print("Performing cloth mesh (4D) transformation...".format(subindex))
-            transformed_submesh = render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, skel_data)
-            write_fmt(transformed_submesh['fmt'],'{0}{1}_transformed.fmt'.format(path, subindex))
-            if len(transformed_submesh['ib']) > 0 or write_empty_buffers == True:
-                write_ib(transformed_submesh['ib'],'{0}{1}_transformed.ib'.format(path, subindex), transformed_submesh['fmt'])
-                write_vb(transformed_submesh['vb'],'{0}{1}_transformed.vb'.format(path, subindex), transformed_submesh['fmt'])
+        if cloth_render_fail == False:
+            try:
+                if submesh_lod['clothID'] == 1 and not nun_maps == False and transform_cloth == True:
+                    print("Performing cloth mesh (4D) transformation...".format(subindex))
+                    if (submesh_lod['NUNID']) >= 10000 and (submesh_lod['NUNID'] < 20000):
+                        NUNID = (submesh_lod['NUNID'] % 10000) + nunv_offset
+                    else:
+                        NUNID = submesh_lod['NUNID'] % 10000
+                    transformed_submesh = render_cloth_submesh(submesh, NUNID, skel_data, nun_maps, e=e)
+                    write_fmt(transformed_submesh['fmt'],'{0}{1}_transformed.fmt'.format(path, subindex))
+                    if len(transformed_submesh['ib']) > 0 or write_empty_buffers == True:
+                        write_ib(transformed_submesh['ib'],'{0}{1}_transformed.ib'.format(path, subindex), transformed_submesh['fmt'])
+                        write_vb(transformed_submesh['vb'],'{0}{1}_transformed.vb'.format(path, subindex), transformed_submesh['fmt'])
+                    if not transformed_submesh["vgmap"] == False:
+                        with open('{0}{1}_transformed.vgmap'.format(path, subindex), 'wb') as f:
+                            f.write(json.dumps(transformed_submesh['vgmap'], indent=4).encode("utf-8"))
+                    drivermesh = nun_maps['driverMeshList'][NUNID]
+                    write_fmt(driverMesh_fmt,'{0}{1}_drivermesh.fmt'.format(path, subindex))
+                    if len(transformed_submesh['ib']) > 0 or write_empty_buffers == True:
+                        write_ib(drivermesh['indices'],'{0}{1}_drivermesh.ib'.format(path, subindex), driverMesh_fmt)
+                        write_vb(drivermesh['vertices'],'{0}{1}_drivermesh.vb'.format(path, subindex), driverMesh_fmt)
+                if submesh_lod['clothID'] == 2 and transform_cloth == True:
+                    print("Performing cloth mesh (4D) transformation...".format(subindex))
+                    transformed_submesh = render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, skel_data)
+                    write_fmt(transformed_submesh['fmt'],'{0}{1}_transformed.fmt'.format(path, subindex))
+                    if len(transformed_submesh['ib']) > 0 or write_empty_buffers == True:
+                        write_ib(transformed_submesh['ib'],'{0}{1}_transformed.ib'.format(path, subindex), transformed_submesh['fmt'])
+                        write_vb(transformed_submesh['vb'],'{0}{1}_transformed.vb'.format(path, subindex), transformed_submesh['fmt'])
+            except:
+                cloth_render_fail = True
+                print("Rendering cloth mesh failed!  Cloth mesh rendering will be skipped.")
 
 # The argument passed (g1m_name) is actually the folder name
 def parseSkelG1M(g1m_name):
@@ -1271,6 +1277,7 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
         chunks["chunks"] = []
         f.seek(chunks["starting_offset"])
         have_skeleton = False
+        nun_parse_fail = False
         for i in range(chunks["count"]):
             chunk = {}
             chunk["start_offset"] = f.tell()
@@ -1292,15 +1299,19 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
                     if not ext_skel == False:
                         model_skel_data = combine_skeleton(ext_skel, model_skel_data)
                 have_skeleton == True # I guess some games duplicate this section?
-            elif chunk["magic"] in ['NUNO', 'ONUN'] and transform_cloth == True: # NUNO
-                f.seek(chunk["start_offset"],0)
-                nun_struct["nuno"] = parseNUNO(f.read(chunk["size"]),e)
-            elif chunk["magic"] in ['NUNV', 'VNUN'] and transform_cloth == True: # NUNV
-                f.seek(chunk["start_offset"],0)
-                nun_struct["nunv"] = parseNUNV(f.read(chunk["size"]),e)
-            elif chunk["magic"] in ['NUNS', 'SNUN'] and transform_cloth == True: # NUNS
-                f.seek(chunk["start_offset"],0)
-                nun_struct["nuns"] = parseNUNV(f.read(chunk["size"]),e)
+            elif chunk["magic"] in ['NUNO', 'ONUN', 'NUNV', 'VNUN', 'NUNS', 'SNUN'] and transform_cloth == True:
+                try:
+                    f.seek(chunk["start_offset"],0)
+                    if chunk["magic"] in ['NUNO', 'ONUN']: # NUNO
+                        nun_struct["nuno"] = parseNUNO(f.read(chunk["size"]),e)
+                    elif chunk["magic"] in ['NUNV', 'VNUN']: # NUNV
+                        nun_struct["nunv"] = parseNUNV(f.read(chunk["size"]),e)
+                    elif chunk["magic"] in ['NUNS', 'SNUN']: # NUNS
+                        nun_struct["nuns"] = parseNUNS(f.read(chunk["size"]),e)
+                except:
+                    nun_parse_fail = True
+                    print("Parsing cloth mesh NUN data failed!  Cloth mesh rendering will be skipped.")
+                    f.seek(chunk["start_offset"] + chunk["size"],0)
             elif chunk["magic"] in ['G1MG', 'GM1G']:
                 f.seek(chunk["start_offset"],0)
                 g1mg_stream = f.read(chunk["size"])
@@ -1310,10 +1321,13 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
             file["chunks"] = chunks
         nun_maps = False
         if len(nun_struct) > 0 and model_skel_data['jointCount'] > 1 and transform_cloth == True:
-            nun_data = stack_nun(nun_struct)
-            nun_maps = calc_nun_maps(nun_data, model_skel_data)
-            if not nun_maps == False:
-                nun_maps['nun_data'] = nun_data
+            try:
+                nun_data = stack_nun(nun_struct)
+                nun_maps = calc_nun_maps(nun_data, model_skel_data)
+                if not nun_maps == False:
+                    nun_maps['nun_data'] = nun_data
+            except:
+                print("Compiling cloth mesh NUN data failed!  Cloth mesh rendering will be skipped.")
         if os.path.exists(g1m_name) and (os.path.isdir(g1m_name)) and (overwrite == False):
             if str(input(g1m_name + " folder exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
                 overwrite = True
@@ -1361,21 +1375,22 @@ if __name__ == "__main__":
                 transform_cloth = transform_cloth, write_empty_buffers = args.write_empty_buffers)
     else:
         # When run without command line arguments, it will attempt to obtain data from all models
+        current_dir_g1m_files = glob.glob('*.g1m')
         models = []
         if os.path.exists('elixir.json'):
             try:
                 with open('elixir.json','r') as f:
                     elixir = json.loads(re.sub('0x[0-9a-zA-Z]+','0',f.read()))
-                models = [x for x in elixir['files'] if x[-4:] == '.g1m'][1:]
+                models = [x for x in elixir['files'] if x[-4:] == '.g1m' and x in current_dir_g1m_files][1:]
             except:
                 pass
         elif os.path.exists('gmpk.json'):
-            if 1:
+            try:
                 with open('gmpk.json','r') as f:
                     gmpk = json.loads(re.sub('0x[0-9a-zA-Z]+','0',f.read()))
-                models = [x['name']+'.g1m' for x in gmpk['SDP']['NID']['names']][1:]
-            #except:
-                #pass
+                models = [x['name']+'.g1m' for x in gmpk['SDP']['NID']['names'] if x['name']+'.g1m' in current_dir_g1m_files][1:]
+            except:
+                pass
         if len(models) > 0:
             for i in range(len(models)):
                 parseG1M(models[i][:-4])
