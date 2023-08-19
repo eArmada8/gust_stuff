@@ -288,9 +288,18 @@ def write_vb(vb_data, vb_filename, fmt_struct, e = '<', interleave = True):
     return
 
 # The following two functions are purely for convenience
-def read_struct_from_json(filename):
+def read_struct_from_json(filename, raise_on_fail = True):
     with open(filename, 'r') as f:
-        return(json.loads(f.read()))
+        try:
+            return(json.loads(f.read()))
+        except json.JSONDecodeError as e:
+            print("Decoding error when trying to read JSON file {0}!\r\n".format(filename))
+            print("{0} at line {1} column {2} (character {3})\r\n".format(e.msg, e.lineno, e.colno, e.pos))
+            if raise_on_fail == True:
+                input("Press Enter to abort.")
+                raise
+            else:
+                return(False)
 
 def write_struct_to_json(struct, filename):
     if not filename[:-5] == '.json':
