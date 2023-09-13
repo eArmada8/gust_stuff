@@ -1,6 +1,10 @@
 # Gust (Atelier) mesh export and import
 A pair of scripts to get the mesh data out of G1M files and back into G1M files.  The output is in .fmt/.ib/.vb/.vgmap files that are compatible with DarkStarSword Blender import plugin for 3DMigoto, and metadata is in JSON format.  Also included is a script to generate a basic glTF model with skeleton that can be used for rigging.
 
+## Tutorials:
+
+Please see the [wiki](https://github.com/eArmada8/gust_stuff/wiki), and the detailed documentation below.
+
 ## Credits:
 99.9% of my understanding of the G1M format comes from the reverse engineering work of Joschuka (github/Joschuka), and specifically his deprecated fmt_g1m.py plugin for Noesis: https://github.com/Joschuka/fmt_g1m
 
