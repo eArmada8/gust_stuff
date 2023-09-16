@@ -161,7 +161,7 @@ def generate_materials(gltf_data, model_mesh_metadata, metadata_sections):
             sampler = { 'wrapS': 10497, 'wrapT': 10497 } # It seems like wrap is the only type used, according to THRG?
             texture = { 'source': materials[i]['textures'][j]['id'], 'sampler': len(gltf_data['samplers']) }
             if materials[i]['textures'][j]['type'] == 1:
-                material['pbrMetallicRoughness']= { 'baseColorTexture' : { 'index' : len(gltf_data['textures'], 'texCoord': materials[i]['textures'][j]['layer']) },\
+                material['pbrMetallicRoughness']= { 'baseColorTexture' : { 'index' : len(gltf_data['textures']), 'texCoord': materials[i]['textures'][j]['layer'] },\
                     'metallicFactor' : 0.0, 'roughnessFactor' : 1.0 }
             elif materials[i]['textures'][j]['type'] == 3:
                 material['normalTexture'] =  { 'index' : len(gltf_data['textures']), 'texCoord': materials[i]['textures'][j]['layer'] }
