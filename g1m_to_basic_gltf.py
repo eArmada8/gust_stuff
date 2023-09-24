@@ -23,9 +23,14 @@
 #
 # GitHub eArmada8/gust_stuff
 
-import glob, os, io, sys, copy, json, numpy
-from pyquaternion import Quaternion
-from g1m_export_meshes import *
+try:
+    import glob, os, io, sys, copy, json, numpy
+    from pyquaternion import Quaternion
+    from g1m_export_meshes import *
+except ModuleNotFoundError as e:
+    print("Python module missing! {}".format(e.msg))
+    input("Press Enter to abort.")
+    raise   
 
 # This only handles formats compatible with G1M
 def convert_format_for_gltf(dxgi_format):

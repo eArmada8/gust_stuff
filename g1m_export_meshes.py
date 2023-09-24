@@ -18,9 +18,14 @@
 #
 # GitHub eArmada8/gust_stuff
 
-import glob, os, io, sys, struct, copy, json, numpy
-from pyquaternion import Quaternion
-from lib_fmtibvb import *
+try:
+    import glob, os, io, sys, struct, copy, json, numpy
+    from pyquaternion import Quaternion
+    from lib_fmtibvb import *
+except ModuleNotFoundError as e:
+    print("Python module missing! {}".format(e.msg))
+    input("Press Enter to abort.")
+    raise   
 
 # This script transforms cloth meshes (aka 4D meshes) by default, change the following line to False to disable
 transform_cloth_mesh_default = True

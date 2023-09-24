@@ -15,9 +15,14 @@
 #
 # GitHub eArmada8/gust_stuff
 
-import glob, os, io, sys, struct, shutil, json
-from lib_fmtibvb import *
-from g1m_export_meshes import *
+try:
+    import glob, os, io, sys, struct, shutil, json
+    from lib_fmtibvb import *
+    from g1m_export_meshes import *
+except ModuleNotFoundError as e:
+    print("Python module missing! {}".format(e.msg))
+    input("Press Enter to abort.")
+    raise   
 
 def parseG1MforG1MF(g1m_name):
     with open(g1m_name + '.g1m', "rb") as f:
