@@ -157,7 +157,7 @@ def parseG1MforG1MG(g1m_name):
             file["chunks"] = chunks
         return(g1mg_stream)
 
-def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, e = '<'):
+def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_data, e = '<'):
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     mesh_with_subs = find_submeshes(model_mesh_metadata) #dict with key as mesh, value as submesh
     original_fmts = generate_fmts(model_mesh_metadata)
@@ -195,6 +195,27 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, e = '<')
                             for l in range(len(ib[k])):
                                 ib[k][l] += ib_offset
                         composite_ib.extend(ib)
+                    # Vertex group sanity check, if vgmap available
+                    if os.path.exists("{0}/{1}.vgmap".format(g1m_name, existing_submeshes[j])):
+                        vgmap = read_struct_from_json("{0}/{1}.vgmap".format(g1m_name, existing_submeshes[j]))
+                        # Proceed only if a complete skeleton is available
+                        if skel_data['jointCount'] > 1 and not skel_data['boneList'][0]['parentID'] < -200000000:
+                            correct_vgmap = generate_vgmap(subvbs['data'][existing_submeshes[j]]['bonePaletteIndex'], model_mesh_metadata, skel_data)
+                            if 'BLENDINDICES' in [x['SemanticName'] for x in vb]:
+                                bl_idx = vb[[x['SemanticName'] for x in vb].index('BLENDINDICES')]['Buffer']
+                                used_bones = sorted(list(set([x for y in bl_idx for x in y])))
+                                rev_vgmap = {vgmap[x]:x for x in vgmap if vgmap[x] in used_bones}
+                                missing_bones = [x for x in rev_vgmap.values() if x not in correct_vgmap]
+                                if len(missing_bones) == 0:
+                                    incorrect = [rev_vgmap[x] for x in rev_vgmap if not x == correct_vgmap[rev_vgmap[x]]]
+                                    if len(incorrect) > 0:
+                                        print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
+                                        print("Incorrect Mappings: {}".format(", ".join(incorrect)))
+                                        input("Press Enter to continue.")
+                                else:
+                                    print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
+                                    print("Missing bones: {}".format(", ".join(missing_bones)))
+                                    input("Press Enter to continue.")
                     # Determine indexBufferPrimType, which is set in submesh section instead of vertex attribute section
                     if fmt["topology"] == "trianglelist":
                         indexBufferPrimType = 3
@@ -259,7 +280,7 @@ def define_bounding_box(composite_vbs):
             box['max_z'] = max(box['max_z'], composite_vbs[i]['vb'][element]['Buffer'][j][2])
     return(box)
 
-def build_g1mg(g1m_name, e = '<'):
+def build_g1mg(g1m_name, skel_data, e = '<'):
     # Retrieve G1MG section from the current G1M file, as there will be sections we do not rebuild
     g1mg_stream = parseG1MforG1MG(g1m_name)
     # Load the metadata - if it does not exist in JSON format, load from G1M instead
@@ -268,7 +289,7 @@ def build_g1mg(g1m_name, e = '<'):
     except:
         model_mesh_metadata = parseG1MG(g1mg_stream,e)
     #Load all the buffers, and combine submeshes into meshes
-    composite_vbs = build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, e)
+    composite_vbs = build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_data, e)
     bounding_box = define_bounding_box(composite_vbs)
     new_g1mg = bytes()
     with io.BytesIO(g1mg_stream) as f:
@@ -477,12 +498,38 @@ def build_g1m(g1m_name):
                 print("not G1M!") # Figure this out later
                 sys.exit()
             # Pack G1MG and G1MF here, to insert into G1M. (Endianness is needed)
-            new_g1mg_data = build_g1mg(g1m_name, e)
-            new_g1mf_data = build_g1mf(new_g1mg_data, g1m_name, e)
             file["file_version"] = f.read(4).hex()
             file["file_size"], = struct.unpack(e+"I", f.read(4))
             chunks = {}
             chunks["starting_offset"], chunks["reserved"], chunks["count"] = struct.unpack(e+"III", f.read(12))
+            # Grab the skeleton for the vgmap sanity check
+            f.seek(chunks["starting_offset"])
+            have_skeleton = False
+            for i in range(chunks["count"]):
+                chunk = {}
+                chunk["start_offset"] = f.tell()
+                chunk["magic"] = f.read(4).decode("utf-8")
+                chunk["version"] = f.read(4).hex()
+                chunk["size"], = struct.unpack(e+"I", f.read(4))
+                if chunk["magic"] in ['G1MS', 'SM1G'] and have_skeleton == False:
+                    f.seek(chunk["start_offset"],0)
+                    model_skel_data = parseG1MS(f.read(chunk["size"]),e)
+                    if os.path.exists(g1m_name+'Oid.bin'):
+                        model_skel_oid = binary_oid_to_dict(g1m_name+'Oid.bin')
+                        model_skel_data = name_bones(model_skel_data, model_skel_oid)
+                    if model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] < -200000000:
+                        #Internal Skeleton
+                        model_skel_data = calc_abs_skeleton(model_skel_data)
+                    else:
+                        ext_skel = get_ext_skeleton(g1m_name)
+                        if not ext_skel == False:
+                            model_skel_data = combine_skeleton(ext_skel, model_skel_data)
+                    have_skeleton == True # I guess some games duplicate this section?
+                else:
+                    f.seek(chunk["start_offset"] + chunk["size"],0) # Move to next section
+            new_g1mg_data = build_g1mg(g1m_name, model_skel_data, e)
+            new_g1mf_data = build_g1mf(new_g1mg_data, g1m_name, e)
+            # Move back to beginning to start rebuild
             f.seek(chunks["starting_offset"])
             new_g1m_data = bytes()
             for i in range(chunks["count"]):
