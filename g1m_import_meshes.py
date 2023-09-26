@@ -299,6 +299,7 @@ def build_g1mg(g1m_name, skel_data, e = '<'):
     try:
         model_mesh_metadata = read_struct_from_json(g1m_name + "/mesh_metadata.json")
     except:
+        print("{0}/mesh_metadata.json missing or unreadable, reading data from {0}.g1m instead...".format(g1m_name))
         model_mesh_metadata = parseG1MG(g1mg_stream,e)
     #Load all the buffers, and combine submeshes into meshes
     composite_vbs = build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_data, e)
