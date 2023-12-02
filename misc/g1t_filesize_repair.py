@@ -12,6 +12,7 @@
 
 import struct, shutil, sys, os, glob
 
+# Thank you to Joschuka, portions of this code are derived from or taken from GitHub/Joschuka/fmt_g1m
 def repair_g1t_offsets (g1t_filename):
     with open(g1t_filename,'r+b') as f:
         header = {}
