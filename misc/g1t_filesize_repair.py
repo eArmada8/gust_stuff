@@ -100,6 +100,7 @@ if __name__ == "__main__":
         parser = argparse.ArgumentParser()
         parser.add_argument('-o', '--overwrite_backup', help="Overwrite existing backup", action="store_true")
         parser.add_argument('g1t_filename', help="Name of g1t file to repair offsets (required).")
+        args = parser.parse_args()
         if os.path.exists(args.g1t_filename) and args.g1t_filename[-4:].lower() == '.g1t':
             process_g1t(args.g1t_filename, overwrite_backup = args.overwrite_backup)
     else:
