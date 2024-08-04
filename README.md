@@ -19,7 +19,7 @@ Finally, I want to thank the folks who wrote the glTF specs, tutorial and valida
 ## Requirements:
 1. Python 3.10 and newer is required for use of these scripts.  It is free from the Microsoft Store, for Windows users.  For Linux users, please consult your distro.
 2. The numpy and pyquaternion modules for python are needed.  Install by typing "python3 -m pip install pyquaternion" in the command line / shell.  (When installing pyquaternion, numpy will automatically be installed alongside pyquaternion.  The io, re, struct, sys, os, shutil, glob, copy, json, argparse modules are also required, but these are all already included in most basic python installations.)
-3. The output can be imported into Blender using DarkStarSword's amazing plugin: https://github.com/DarkStarSword/3d-fixes/blob/master/blender_3dmigoto.py (tested on commit [c6daca9](https://raw.githubusercontent.com/DarkStarSword/3d-fixes/c6daca90d64b0fb53f2ebf70806e539b8007d328/blender_3dmigoto.py))
+3. The output can be imported into Blender using DarkStarSword's amazing plugin: https://github.com/DarkStarSword/3d-fixes/blob/master/blender_3dmigoto.py (tested on commit [5fd206c](https://raw.githubusercontent.com/DarkStarSword/3d-fixes/5fd206c52fb8c510727d1d3e4caeb95dac807fb2/blender_3dmigoto.py))
 4. g1m_export_meshes.py is dependent on lib_fmtibvb.py, which must be in the same folder.  
 g1m_import_meshes.py is dependent on both g1m_export_meshes.py and lib_fmtibvb.py.
 
