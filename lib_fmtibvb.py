@@ -256,10 +256,52 @@ def read_vb_stream(vb_stream, fmt_struct, e = '<'):
             vb_data.append(element)
     return(vb_data)
 
+def read_seg_vb_stream(vb_stream, fmt_struct, input_slot, e = '<'):
+    seg_stride = "vb{} stride".format(input_slot)
+    seg_elements = [x for x in fmt_struct['elements'] if x['InputSlot'] == input_slot]
+    vb_data = []
+    with io.BytesIO(vb_stream) as f:
+        length = f.seek(0,2)
+        f.seek(0)
+        num_vertex = int(length / int(fmt_struct[seg_stride]))
+        buffer_strides = []
+        # Calculate individual buffer strides
+        for i in range(len(seg_elements)):
+            if i == len(seg_elements) - 1:
+                buffer_strides.append(int(fmt_struct[seg_stride]) - int(seg_elements[i]["AlignedByteOffset"]))
+            else:
+                buffer_strides.append(int(seg_elements[i+1]["AlignedByteOffset"]) \
+                    - int(seg_elements[i]["AlignedByteOffset"]))
+        # Read in the buffers
+        for i in range(len(seg_elements)):
+            element = {}
+            element["SemanticName"] = seg_elements[i]["SemanticName"]
+            element["SemanticIndex"] = seg_elements[i]["SemanticIndex"]
+            element["InputSlot"] = seg_elements[i]["InputSlot"]
+            element_buffer = []
+            for j in range(num_vertex):
+                f.seek(j * int(fmt_struct[seg_stride]) + int(seg_elements[i]["AlignedByteOffset"]),0)
+                element_buffer.append(unpack_dxgi_vector(f, buffer_strides[i], seg_elements[i]["Format"], e))
+            element["Buffer"] = element_buffer
+            vb_data.append(element)
+    return(vb_data)
+
 def read_vb(vb_filename, fmt_struct, e = '<'):
-    with open(vb_filename, 'rb') as f:
-        vb_stream = f.read()
-    return(read_vb_stream(vb_stream, fmt_struct, e))
+    if 'stride' in fmt_struct:
+        with open(vb_filename, 'rb') as f:
+            vb_stream = f.read()
+        return(read_vb_stream(vb_stream, fmt_struct, e))
+    elif 'vb0 stride' in fmt_struct:
+        vb = []
+        for input_slot in [x[2:-7] for x in fmt_struct if len(x.split('stride')) > 1]:
+            with open(vb_filename + input_slot, 'rb') as f:
+                vb_stream = f.read()
+            vb.extend(read_seg_vb_stream(vb_stream, fmt_struct, input_slot, e))
+        return(vb)
+    else:
+        print("Decoding error when trying to interpret fmt file for {0}!\r\n".format(vb_filename))
+        input("Press Enter to abort.")
+        raise
 
 def write_vb_stream(vb_data, vb_stream, fmt_struct, e = '<', interleave = True):
     buffer_strides = []
@@ -282,9 +324,42 @@ def write_vb_stream(vb_data, vb_stream, fmt_struct, e = '<', interleave = True):
                 pack_dxgi_vector(vb_stream, vb_data[i]["Buffer"][j], buffer_strides[i], fmt_struct["elements"][i]["Format"], e)
     return
 
+def write_seg_vb_stream(vb_data, vb_stream, fmt_struct, input_slot, e = '<', interleave = True):
+    buffer_strides = []
+    seg_stride = fmt_struct["vb{} stride".format(input_slot)]
+    seg_vb_data = [x for x in vb_data if x['InputSlot'] == input_slot]
+    seg_elements = [x for x in fmt_struct['elements'] if x['InputSlot'] == input_slot]
+    # Calculate individual buffer strides
+    for i in range(len(seg_elements)):
+        if i == len(seg_elements) - 1:
+            buffer_strides.append(int(seg_stride) - int(seg_elements[i]["AlignedByteOffset"]))
+        else:
+            buffer_strides.append(int(seg_elements[i+1]["AlignedByteOffset"]) \
+                - int(seg_elements[i]["AlignedByteOffset"]))
+    if interleave == True:
+        # Write out the buffers, vertex by vertex.
+        for j in range(len(seg_vb_data[0]["Buffer"])):
+            for i in range(len(seg_elements)):
+                pack_dxgi_vector(vb_stream, seg_vb_data[i]["Buffer"][j], buffer_strides[i], seg_elements[i]["Format"], e)
+    else:
+        # Write out the buffers, element by element.
+        for i in range(len(seg_elements)):
+            for j in range(len(seg_vb_data[0]["Buffer"])):
+                pack_dxgi_vector(vb_stream, seg_vb_data[i]["Buffer"][j], buffer_strides[i], seg_elements[i]["Format"], e)
+    return
+
 def write_vb(vb_data, vb_filename, fmt_struct, e = '<', interleave = True):
-    with open(vb_filename, 'wb') as f:
-        write_vb_stream(vb_data, f, fmt_struct, e=e, interleave=interleave)
+    if 'stride' in fmt_struct:
+        with open(vb_filename, 'wb') as f:
+            write_vb_stream(vb_data, f, fmt_struct, e=e, interleave=interleave)
+    elif 'vb0 stride' in fmt_struct:
+        for input_slot in [x[2:-7] for x in fmt_struct if len(x.split('stride')) > 1]:
+            with open(vb_filename + input_slot, 'wb') as f:
+                write_seg_vb_stream(vb_data, f, fmt_struct, input_slot, e=e, interleave=interleave)
+    else:
+        print("Decoding error when trying to interpret fmt file for {0}!\r\n".format(vb_filename))
+        input("Press Enter to abort.")
+        raise
     return
 
 # The following two functions are purely for convenience

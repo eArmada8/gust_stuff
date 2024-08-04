@@ -173,14 +173,17 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
         existing_submeshes = [x for x in mesh_with_subs[i] if str(x) in meshfiles]
         if len(existing_submeshes) > 0:
             try:
-                fmt = read_fmt("{0}/{1}.fmt".format(g1m_name, existing_submeshes[0]))
+                mesh_fmt = read_fmt("{0}/{1}.fmt".format(g1m_name, existing_submeshes[0]))
+                mesh_stride = mesh_fmt['vb0 stride'] if 'vb0 stride' in mesh_fmt else mesh_fmt['stride']
                 composite_vb = []
                 composite_ib = []
                 vbsub_info = {}
                 for j in range(len(existing_submeshes)):
                     print("Processing submesh {0}...".format(existing_submeshes[j]))
+                    fmt = read_fmt("{0}/{1}.fmt".format(g1m_name, existing_submeshes[j]))
+                    stride = fmt['vb0 stride'] if 'vb0 stride' in fmt else fmt['stride']
                     # Do not process submesh if it does not match the existing format (set by the first submesh)
-                    if fmt == read_fmt("{0}/{1}.fmt".format(g1m_name, existing_submeshes[j])):
+                    if stride == mesh_stride and fmt['elements'] == mesh_fmt['elements']:
                         vb = read_vb("{0}/{1}.vb".format(g1m_name, existing_submeshes[j]), fmt)
                         ib = read_ib("{0}/{1}.ib".format(g1m_name, existing_submeshes[j]), fmt)
                         if len(composite_vb) == 0:
@@ -372,6 +375,8 @@ def build_g1mg(g1m_name, skel_data, e = '<'):
                 elif model_mesh_metadata['sections'][i]['type'] == 'VERTEX_BUFFERS':
                     vertex_stream = io.BytesIO()
                     for j in range(len(composite_vbs)):
+                        if not 'stride' in composite_vbs[j]['fmt'] and 'vb0 stride' in composite_vbs[j]['fmt']:
+                            composite_vbs[j]['fmt']['stride'] = composite_vbs[j]['fmt']['vb0 stride']
                         vertex_stream.write(struct.pack(e+"3I", model_mesh_metadata['sections'][i]['data'][composite_vbs[j]['original_vb_num']]["unknown1"],\
                             int(composite_vbs[j]['fmt']['stride']), len(composite_vbs[j]['vb'][0]['Buffer'])))
                         if model_mesh_metadata["version"] > 0x30303430:
