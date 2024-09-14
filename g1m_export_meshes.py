@@ -1153,8 +1153,9 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
         if not submesh["vgmap"] == False:
             with open('{0}{1}.vgmap'.format(path, subindex), 'wb') as f:
                 f.write(json.dumps(submesh['vgmap'], indent=4).encode("utf-8"))
-        submesh_lod = [x for x in lod_data['data'][0]['lod'] if subindex in x['indices']][0]
-        if cloth_render_fail == False:
+        lod_blocks_combined = [x for y in lod_data['data'] for x in y['lod']]
+        submesh_lod = [x for x in lod_blocks_combined if subindex in x['indices']][0]
+        if cloth_render_fail == False and not nun_maps == False:
             try:
                 if submesh_lod['clothID'] == 1 and not nun_maps == False and transform_cloth == True:
                     print("Performing cloth mesh (4D) transformation...".format(subindex))

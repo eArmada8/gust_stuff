@@ -235,7 +235,8 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
         # Skip submesh if 4D, unless NUN data is available
         if (len(re.findall('[0-9]+', [x for x in fmts[subvbs['data'][subindex]['vertexBufferIndex']]['elements'] if x['SemanticName'] == 'POSITION'][0]['Format'])) == 3) \
             or not nun_maps == False:
-            submesh_lod = [x for x in lod_data['data'][0]['lod'] if subindex in x['indices']][0]
+            lod_blocks_combined = [x for y in lod_data['data'] for x in y['lod']]
+            submesh_lod = [x for x in lod_blocks_combined if subindex in x['indices']][0]
             primitive = {"attributes":{}}
             fmts = generate_fmts(model_mesh_metadata) # Refresh FMT every time, to dereference
             submesh = generate_submesh(subindex, g1mg_stream, model_mesh_metadata, model_skel_data, fmts, e=e, cull_vertices = True, preserve_trianglestrip = True)
