@@ -143,6 +143,14 @@ def fix_weight_groups(submesh):
             new_submesh['vb'][bone_element_index]['Buffer'][i] = [0 for x in new_submesh['vb'][bone_element_index]['Buffer'][i]]
     return(new_submesh)
 
+def fix_normal_type(submesh):
+    normal_element_index = int([x for x in submesh['fmt']['elements'] if x['SemanticName'] == 'NORMAL'][0]['id'])
+    if not submesh['fmt']['elements'][normal_element_index]['Format'] == 'R32G32B32_FLOAT':
+        submesh['fmt']['elements'][normal_element_index]['Format'] = 'R32G32B32_FLOAT' #This is the only option in glTF
+        submesh['vb'][normal_element_index]['Buffer'] = [submesh['vb'][normal_element_index]['Buffer'][i][0:3]\
+            for i in range(len(submesh['vb'][normal_element_index]['Buffer']))]
+    return(submesh)
+
 def fix_tangent_length(submesh):
     tangent_element_index = int([x for x in submesh['fmt']['elements'] if x['SemanticName'] == 'TANGENT'][0]['id'])
     for i in range(len(submesh['vb'][tangent_element_index]['Buffer'])):
@@ -265,6 +273,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
                     skip_weights = True # Certain models do not have weights at all
                 if not submesh_lod['clothID'] == 0 and 'TANGENT' in [x['SemanticName'] for x in submesh['vb']]:
                     submesh = fix_tangent_length(submesh) # Needed for cloth meshes, I have no idea why
+                submesh = fix_normal_type(submesh) # Needed for normals stored as VEC4 with an empty 4th value - not "4D" cloth meshes
                 gltf_fmt = convert_fmt_for_gltf(submesh['fmt'])
                 vb_stream = io.BytesIO()
                 write_vb_stream(submesh['vb'], vb_stream, gltf_fmt, e=e, interleave = False)
@@ -401,7 +410,7 @@ def G1M2glTF(g1m_name, overwrite = False, keep_color = False):
                     ext_skel = get_ext_skeleton(g1m_name)
                     if not ext_skel == False:
                         model_skel_data = combine_skeleton(ext_skel, model_skel_data)
-                have_skeleton == True # I guess some games duplicate this section?
+                have_skeleton = True # I guess some games duplicate this section?
             elif chunk["magic"] in ['NUNO', 'ONUN', 'NUNV', 'VNUN', 'NUNS', 'SNUN'] and transform_cloth == True:
                 try:
                     f.seek(chunk["start_offset"],0)
