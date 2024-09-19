@@ -1304,7 +1304,7 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
                     ext_skel = get_ext_skeleton(g1m_name)
                     if not ext_skel == False:
                         model_skel_data = combine_skeleton(ext_skel, model_skel_data)
-                have_skeleton == True # I guess some games duplicate this section?
+                have_skeleton = True # I guess some games duplicate this section?
             elif chunk["magic"] in ['NUNO', 'ONUN', 'NUNV', 'VNUN', 'NUNS', 'SNUN'] and transform_cloth == True:
                 try:
                     f.seek(chunk["start_offset"],0)
