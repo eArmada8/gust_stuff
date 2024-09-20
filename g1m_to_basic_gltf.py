@@ -90,11 +90,15 @@ def convert_fmt_for_gltf(fmt):
     return(new_fmt)
 
 def convert_bones_to_single_file(submesh):
-    bone_element_index = int([x for x in submesh['fmt']['elements'] if x['SemanticName'] == 'BLENDINDICES'][0]['id'])
-    for i in range(len(submesh['vb'][bone_element_index]['Buffer'])):
-        for j in range(len(submesh['vb'][bone_element_index]['Buffer'][i])):
-            submesh['vb'][bone_element_index]['Buffer'][i][j] = \
-                int(submesh['vb'][bone_element_index]['Buffer'][i][j] // 3) # Dunno why G1M indices count by 3, I think it's for NUN?
+    bone_element_indices =[x for x in submesh['fmt']['elements'] if x['SemanticName'] == 'BLENDINDICES']
+    if len(bone_element_indices) > 0:
+        for i in range(len(bone_element_indices)):
+            bone_element_index = int(bone_element_indices[i]['id'])
+            for j in range(len(submesh['vb'][bone_element_index]['Buffer'])):
+                for k in range(len(submesh['vb'][bone_element_index]['Buffer'][j])):
+                    # Dunno why G1M indices count by 3, I think it's for NUN?
+                    submesh['vb'][bone_element_index]['Buffer'][j][k] = \
+                        int(submesh['vb'][bone_element_index]['Buffer'][j][k] // 3) 
     return(submesh)
 
 def list_of_utilized_bones(submesh, model_skel_data):
@@ -104,6 +108,7 @@ def list_of_utilized_bones(submesh, model_skel_data):
             true_bone_map[model_skel_data['boneList'][i]['bone_id']] = model_skel_data['boneList'][i]['i']
     return([true_bone_map[x] for x in submesh['vgmap'].keys()])
 
+# This function currently only works for meshes with a single set of weights (JOINTS_0 and WEIGHTS_0 only)
 def fix_weight_groups(submesh):
     # Avoid some strange behavior from variable assignment, will copy instead
     new_submesh = copy.deepcopy(submesh)
@@ -169,7 +174,7 @@ def generate_materials(gltf_data, model_mesh_metadata, metadata_sections):
         images = ['{0}.dds'.format(str(i).zfill(3)) for i in range(max([x['id'] for y in materials for x in y['textures']])+1)]
     gltf_data['images'] = [{'uri':x} for x in images]
     for i in range(len(materials)):
-        material = {}
+        material = {'name': 'Material_{0:02d}'.format(i)}
         for j in range(len(materials[i]['textures'])):
             sampler = { 'wrapS': 10497, 'wrapT': 10497 } # It seems like wrap is the only type used, according to THRG?
             texture = { 'source': materials[i]['textures'][j]['id'], 'sampler': len(gltf_data['samplers']) }
