@@ -23,6 +23,9 @@
 #
 # GitHub eArmada8/gust_stuff
 
+# If set to True, the meshes will translate to the root node - needed for DOA and some other games
+translate_meshes = True
+
 try:
     import glob, os, io, sys, copy, json, numpy
     from pyquaternion import Quaternion
@@ -193,6 +196,7 @@ def generate_materials(gltf_data, model_mesh_metadata, metadata_sections):
     return(gltf_data)
 
 def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_maps, e = '<', keep_color = False):
+    global translate_meshes
     # Trying to detect if the external skeleton is missing
     metadata_sections = {model_mesh_metadata['sections'][i]['type']:i for i in range(len(model_mesh_metadata['sections']))}
     skel_present = model_skel_data['jointCount'] > 1 and not model_skel_data['boneList'][0]['parentID'] == -2147483648
@@ -279,6 +283,13 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
                 if not submesh_lod['clothID'] == 0 and 'TANGENT' in [x['SemanticName'] for x in submesh['vb']]:
                     submesh = fix_tangent_length(submesh) # Needed for cloth meshes, I have no idea why
                 submesh = fix_normal_type(submesh) # Needed for normals stored as VEC4 with an empty 4th value - not "4D" cloth meshes
+                # Move model to root node if translate_meshes set to True
+                if translate_meshes == True and 'translation' in gltf_data['nodes'][0]:
+                    position_index = [x['SemanticName'] for x in submesh['fmt']['elements']].index('POSITION')
+                    position_veclength = len(submesh['vb'][position_index]['Buffer'][0])
+                    shift = numpy.array(gltf_data['nodes'][0]['translation']+([0]*(position_veclength-3)))
+                    submesh['vb'][position_index]['Buffer'] = [(x+shift).tolist() for x\
+                        in submesh['vb'][position_index]['Buffer']]
                 gltf_fmt = convert_fmt_for_gltf(submesh['fmt'])
                 vb_stream = io.BytesIO()
                 write_vb_stream(submesh['vb'], vb_stream, gltf_fmt, e=e, interleave = False)
