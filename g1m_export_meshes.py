@@ -674,7 +674,9 @@ def parseG1MG(g1mg_chunk,e):
                 case 0x00010004:
                     section['type'] = 'VERTEX_BUFFERS'
                     vertex_block = []
-                    for j in range(section['count']):
+                    j = 0
+                    current_offset = 0 # This is set if stride == 1, I have no idea if it's ever set more than once
+                    while j < section['count']:
                         buffer = {'id_referenceonly': j}
                         buffer["unknown1"], buffer["stride"], buffer["count"] = struct.unpack(e+"3I", f.read(12))
                         if g1mg_section["version"] > 0x30303430:
@@ -682,7 +684,26 @@ def parseG1MG(g1mg_chunk,e):
                         buffer["offset"] = f.tell()
                         # Skipping over the actual buffer data here, switch to f.read to actually get the buffer
                         f.seek(buffer["stride"] * buffer["count"],1)
+                        # Some games seem to segment a large buffer into a bunch of small buffers
+                        if buffer["stride"] == 1: # The buffer is a repository, set offset marker
+                            current_offset = buffer["offset"]
                         vertex_block.append(buffer)
+                        j += 1
+                        end_of_buffer_segment = False
+                        while end_of_buffer_segment == False:
+                            possible_flag, = struct.unpack(e+"I", f.read(4))
+                            f.seek(-0x4,1)
+                            if possible_flag == 0x80000000:
+                                buffer = {'id_referenceonly': j}
+                                buffer["unknown1"], buffer["stride"], buffer["count"] = struct.unpack(e+"3I", f.read(12))
+                                if g1mg_section["version"] > 0x30303430:
+                                    buffer["unknown2"], = struct.unpack(e+"I", f.read(4))
+                                buffer["offset"] = current_offset
+                                current_offset += buffer["stride"] * buffer["count"]
+                                vertex_block.append(buffer)
+                                j += 1
+                            else:
+                                end_of_buffer_segment = True
                     section['data'] = vertex_block
                 case 0x00010005:
                     section['type'] = 'VERTEX_ATTRIBUTES'
