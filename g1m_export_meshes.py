@@ -400,7 +400,7 @@ def parseNUNO(nuno_chunk, e):
                             if not chunk["subchunks"][-1]["entryID"] in entryIDtoNunoID.keys():
                                 entryIDtoNunoID[chunk["subchunks"][-1]["entryID"]] = j
                 else:
-                    f.seek(chunk["size"],1)
+                    f.seek(chunk["size"]-12,1)
                 if chunk["Type"] == 0x00030005:
                     # Untested, the model I have access to does not have subsets
                     nunoIDToSubsetMap = {}
