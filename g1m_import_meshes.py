@@ -377,8 +377,8 @@ def build_g1mg(g1m_name, skel_data, e = '<'):
                     for j in range(len(composite_vbs)):
                         if not 'stride' in composite_vbs[j]['fmt'] and 'vb0 stride' in composite_vbs[j]['fmt']:
                             composite_vbs[j]['fmt']['stride'] = composite_vbs[j]['fmt']['vb0 stride']
-                        vertex_stream.write(struct.pack(e+"3I", model_mesh_metadata['sections'][i]['data'][composite_vbs[j]['original_vb_num']]["unknown1"],\
-                            int(composite_vbs[j]['fmt']['stride']), len(composite_vbs[j]['vb'][0]['Buffer'])))
+                        vertex_stream.write(struct.pack(e+"3I", 0, int(composite_vbs[j]['fmt']['stride']),\
+                            len(composite_vbs[j]['vb'][0]['Buffer'])))
                         if model_mesh_metadata["version"] > 0x30303430:
                             vertex_stream.write(struct.pack(e+"I", model_mesh_metadata['sections'][i]['data'][composite_vbs[j]['original_vb_num']]["unknown2"]))
                         write_vb_stream(composite_vbs[j]['vb'], vertex_stream, composite_vbs[j]['fmt'], e)
