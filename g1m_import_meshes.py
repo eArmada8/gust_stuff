@@ -16,7 +16,7 @@
 # GitHub eArmada8/gust_stuff
 
 try:
-    import glob, os, io, sys, struct, shutil, json
+    import glob, os, io, sys, copy, struct, shutil, json
     from lib_fmtibvb import *
     from g1m_export_meshes import *
 except ModuleNotFoundError as e:
@@ -186,6 +186,49 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                     if stride == mesh_stride and fmt['elements'] == mesh_fmt['elements']:
                         vb = read_vb("{0}/{1}.vb".format(g1m_name, existing_submeshes[j]), fmt)
                         ib = read_ib("{0}/{1}.ib".format(g1m_name, existing_submeshes[j]), fmt)
+                        # Vertex group sanity check, if vgmap available
+                        if os.path.exists("{0}/{1}.vgmap".format(g1m_name, existing_submeshes[j])):
+                            vgmap = read_struct_from_json("{0}/{1}.vgmap".format(g1m_name, existing_submeshes[j]))
+                            # Proceed only if a complete skeleton is available
+                            if skel_data['jointCount'] > 1 and not skel_data['boneList'][0]['parentID'] < -200000000:
+                                correct_vgmap = generate_vgmap(subvbs['data'][existing_submeshes[j]]['bonePaletteIndex'], model_mesh_metadata, skel_data)
+                                semantics = [x['SemanticName'] for x in vb]
+                                if 'BLENDINDICES' in semantics:
+                                    vg_index = semantics.index('BLENDINDICES')
+                                    wt_index = semantics.index('BLENDWEIGHT')
+                                    bl_idx = vb[vg_index]['Buffer']
+                                    used_bones = sorted(list(set([x for y in bl_idx for x in y])))
+                                    rev_vgmap = {vgmap[x]:x for x in vgmap if vgmap[x] in used_bones}
+                                    missing_bones = [x for x in rev_vgmap.values() if x not in correct_vgmap]
+                                    if len(missing_bones) == 0:
+                                        incorrect = [rev_vgmap[x] for x in rev_vgmap if not x == correct_vgmap[rev_vgmap[x]]]
+                                        if len(incorrect) > 0:
+                                            indices = [x for y in bl_idx for x in y]
+                                            weights_copy = copy.deepcopy(vb[wt_index]['Buffer'])
+                                            # Some games use a longer index buffer than weights buffer (4 bytes for index, VEC3 float for weights)
+                                            while len(bl_idx[0]) > len(weights_copy[0]):
+                                                weights_copy = [x+[0.0] for x in weights_copy]
+                                            weights = [x for y in weights_copy for x in y]
+                                            true_indices = sorted(list(set([indices[k] for k in range(len(indices)) if weights[k] > 0.0])))
+                                            print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
+                                            print("Incorrect Mappings: {}".format(", ".join(incorrect)))
+                                            try:
+                                                used_vg = [rev_vgmap[z] for z in true_indices]
+                                                if all([x in correct_vgmap.keys() for x in used_vg]):
+                                                    print("VGMap appears compatible, attempting automatic remap...")
+                                                    new_buffer = []
+                                                    for k in range(len(bl_idx)):
+                                                        new_buffer.append([correct_vgmap[y] if y in correct_vgmap else 0 for y \
+                                                            in [rev_vgmap[z] for z in bl_idx[k]]])
+                                                    bl_idx = new_buffer
+                                                else:
+                                                    input("Press Enter to continue.")
+                                            except KeyError: # Remap will fail on cloth meshes
+                                                input("Automatic remap cannot be attempted on a cloth mesh.  Press Enter to continue.")
+                                    else:
+                                        print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
+                                        print("Missing bones: {}".format(", ".join(missing_bones)))
+                                        input("Press Enter to continue.")
                         if len(composite_vb) == 0:
                             composite_vb = vb
                             composite_ib = ib
@@ -198,27 +241,6 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                                 for l in range(len(ib[k])):
                                     ib[k][l] += ib_offset
                             composite_ib.extend(ib)
-                        # Vertex group sanity check, if vgmap available
-                        if os.path.exists("{0}/{1}.vgmap".format(g1m_name, existing_submeshes[j])):
-                            vgmap = read_struct_from_json("{0}/{1}.vgmap".format(g1m_name, existing_submeshes[j]))
-                            # Proceed only if a complete skeleton is available
-                            if skel_data['jointCount'] > 1 and not skel_data['boneList'][0]['parentID'] < -200000000:
-                                correct_vgmap = generate_vgmap(subvbs['data'][existing_submeshes[j]]['bonePaletteIndex'], model_mesh_metadata, skel_data)
-                                if 'BLENDINDICES' in [x['SemanticName'] for x in vb]:
-                                    bl_idx = vb[[x['SemanticName'] for x in vb].index('BLENDINDICES')]['Buffer']
-                                    used_bones = sorted(list(set([x for y in bl_idx for x in y])))
-                                    rev_vgmap = {vgmap[x]:x for x in vgmap if vgmap[x] in used_bones}
-                                    missing_bones = [x for x in rev_vgmap.values() if x not in correct_vgmap]
-                                    if len(missing_bones) == 0:
-                                        incorrect = [rev_vgmap[x] for x in rev_vgmap if not x == correct_vgmap[rev_vgmap[x]]]
-                                        if len(incorrect) > 0:
-                                            print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
-                                            print("Incorrect Mappings: {}".format(", ".join(incorrect)))
-                                            input("Press Enter to continue.")
-                                    else:
-                                        print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
-                                        print("Missing bones: {}".format(", ".join(missing_bones)))
-                                        input("Press Enter to continue.")
                         # Determine indexBufferPrimType, which is set in submesh section instead of vertex attribute section
                         if fmt["topology"] == "trianglelist":
                             indexBufferPrimType = 3
