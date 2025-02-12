@@ -26,6 +26,9 @@
 # If set to True, the meshes will translate to the root node - needed for DOA and some other games
 translate_meshes = True
 
+# This script discards vertex color semantic by default (it is not used for color) when below set to False.
+preserve_vertex_color_as_default = False
+
 try:
     import glob, os, io, sys, copy, json, numpy
     from pyquaternion import Quaternion
@@ -197,7 +200,7 @@ def generate_materials(gltf_data, model_mesh_metadata, metadata_sections):
         gltf_data['materials'].append(material)
     return(gltf_data)
 
-def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_maps, e = '<', keep_color = False):
+def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_maps, e = '<', keep_color = preserve_vertex_color_as_default):
     global translate_meshes
     # Trying to detect if the external skeleton is missing
     metadata_sections = {model_mesh_metadata['sections'][i]['type']:i for i in range(len(model_mesh_metadata['sections']))}
@@ -386,7 +389,7 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
         f.write(json.dumps(gltf_data, indent=4).encode("utf-8"))
 
 # The argument passed (g1m_name) is actually the folder name
-def G1M2glTF(g1m_name, overwrite = False, keep_color = False):
+def G1M2glTF(g1m_name, overwrite = False, keep_color = preserve_vertex_color_as_default):
     with open(g1m_name + '.g1m', "rb") as f:
         print("Processing {0}...".format(g1m_name + '.g1m'))
         file = {}
@@ -475,11 +478,18 @@ if __name__ == "__main__":
         import argparse
         parser = argparse.ArgumentParser()
         parser.add_argument('-o', '--overwrite', help="Overwrite existing files", action="store_true")
-        parser.add_argument('-k', '--keep_color', help="Preserve vertex color attribute", action="store_true")
+        if preserve_vertex_color_as_default == True:
+            parser.add_argument('-r', '--remove_color', help="Remove vertex color attribute", action="store_false")
+        else:
+            parser.add_argument('-k', '--keep_color', help="Preserve vertex color attribute", action="store_true")
         parser.add_argument('g1m_filename', help="Name of g1m file to build glTF (required).")
         args = parser.parse_args()
+        if preserve_vertex_color_as_default == True:
+            color_option = args.remove_color
+        else:
+            color_option = args.keep_color
         if os.path.exists(args.g1m_filename) and args.g1m_filename[-4:].lower() == '.g1m':
-            G1M2glTF(args.g1m_filename[:-4], overwrite = args.overwrite, keep_color = args.keep_color)
+            G1M2glTF(args.g1m_filename[:-4], overwrite = args.overwrite, keep_color = color_option)
     else:
         # When run without command line arguments, it will attempt to obtain data from all models
         current_dir_g1m_files = glob.glob('*.g1m')
