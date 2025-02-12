@@ -16,7 +16,7 @@
 # GitHub eArmada8/gust_stuff
 
 try:
-    import glob, os, io, sys, copy, struct, shutil, json
+    import glob, os, io, sys, re, copy, struct, shutil, json
     from lib_fmtibvb import *
     from g1m_export_meshes import *
 except ModuleNotFoundError as e:
@@ -181,11 +181,30 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                 for j in range(len(existing_submeshes)):
                     print("Processing submesh {0}...".format(existing_submeshes[j]))
                     fmt = read_fmt("{0}/{1}.fmt".format(g1m_name, existing_submeshes[j]))
+                    vb = read_vb("{0}/{1}.vb".format(g1m_name, existing_submeshes[j]), fmt)
+                    ib = read_ib("{0}/{1}.ib".format(g1m_name, existing_submeshes[j]), fmt)
                     stride = fmt['vb0 stride'] if 'vb0 stride' in fmt else fmt['stride']
                     # Do not process submesh if it does not match the existing format (set by the first submesh)
+                    compatible_fmt = False
                     if stride == mesh_stride and fmt['elements'] == mesh_fmt['elements']:
-                        vb = read_vb("{0}/{1}.vb".format(g1m_name, existing_submeshes[j]), fmt)
-                        ib = read_ib("{0}/{1}.ib".format(g1m_name, existing_submeshes[j]), fmt)
+                        compatible_fmt = True
+                    else:
+                        #If fmt does not match but the necessary components are available, then the buffer can be rearranged to match
+                        fmt_contents = ['{0}_{1}'.format(x['SemanticName'], x['SemanticIndex']) for x in fmt['elements']]
+                        mesh_fmt_contents = ['{0}_{1}'.format(x['SemanticName'], x['SemanticIndex']) for x in mesh_fmt['elements']]
+                        if all([x in fmt_contents for x in mesh_fmt_contents]):
+                            vb = [vb[fmt_contents.index(x)] for x in mesh_fmt_contents]
+                            #Some G1M games omit the final weight, so we need to strip it out
+                            num_weights = len([x for x in fmt['elements'] if x['SemanticName'] == 'BLENDINDICES'])
+                            for k in range(num_weights):
+                                correct_wt_len = len(re.findall('[0-9]+', mesh_fmt['elements'][mesh_fmt_contents.index('BLENDWEIGHT_{}'.format(k))]['Format'].split('_')[0]))
+                                current_wt_len = len(re.findall('[0-9]+', fmt['elements'][fmt_contents.index('BLENDWEIGHT_{}'.format(k))]['Format'].split('_')[0]))
+                                if current_wt_len > correct_wt_len:
+                                    current_wt_index = mesh_fmt_contents.index('BLENDWEIGHT_{}'.format(k)) # The buffer has already been re-ordered
+                                    vb[current_wt_index]['Buffer'] = [x[:correct_wt_len] for x in vb[current_wt_index]['Buffer']]
+                            fmt = mesh_fmt
+                            compatible_fmt = True
+                    if compatible_fmt == True:
                         # Vertex group sanity check, if vgmap available
                         if os.path.exists("{0}/{1}.vgmap".format(g1m_name, existing_submeshes[j])):
                             vgmap = read_struct_from_json("{0}/{1}.vgmap".format(g1m_name, existing_submeshes[j]))
@@ -199,12 +218,12 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                                     wt_indices = [k for k in range(len(semantics)) if semantics[k] in ['BLENDWEIGHT', 'BLENDWEIGHTS']]
                                     bl_indices = [vb[x]['Buffer'] for x in vg_indices]
                                     used_bones = [sorted(list(set([x for y in z for x in y]))) for z in bl_indices]
-                                    rev_vgmaps = [{vgmap[x]:x for x in vgmap if vgmap[x] in z} for z in bl_indices]
+                                    rev_vgmaps = [{vgmap[x]:x for x in vgmap if vgmap[x] in z} for z in used_bones]
                                     missing_bones = [[x for x in z.values() if x not in correct_vgmap] for z in rev_vgmaps]
                                     for k in range(len(missing_bones)):
                                         if len(missing_bones[k]) == 0:
-                                            incorrect = [rev_vgmaps[k][x] for x in rev_vgmaps[k] if not x == correct_vgmap[rev_vgmaps[k][x]]]
-                                            if len(incorrect) > 0:
+                                            incorrect_mappings = [rev_vgmaps[k][x] for x in rev_vgmaps[k] if not x == correct_vgmap[rev_vgmaps[k][x]]]
+                                            if len(incorrect_mappings) > 0:
                                                 indices = [x for y in bl_indices[k] for x in y]
                                                 wt_index = [m for m in wt_indices if semantic_indices[m] == semantic_indices[vg_indices[k]]][0]
                                                 weights_copy = copy.deepcopy(vb[wt_index]['Buffer'])
@@ -214,20 +233,21 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                                                 weights = [x for y in weights_copy for x in y]
                                                 true_indices = sorted(list(set([indices[k] for k in range(len(indices)) if weights[k] > 0.0])))
                                                 print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
-                                                print("Incorrect Mappings: {}".format(", ".join(incorrect)))
                                                 try:
                                                     used_vg = [rev_vgmaps[k][z] for z in true_indices]
                                                     if all([x in correct_vgmap.keys() for x in used_vg]):
-                                                        print("VGMap appears compatible, attempting automatic remap...")
+                                                        print("VGMap appears compatible, attempting automatic remap and repair...")
                                                         new_buffer = []
-                                                        for k in range(len(bl_indices[k])):
+                                                        for m in range(len(bl_indices[k])):
                                                             new_buffer.append([correct_vgmap[y] if y in correct_vgmap else 0 for y \
-                                                                in [rev_vgmaps[k][z] for z in bl_indices[k][k]]])
+                                                                in [rev_vgmaps[k][z] for z in bl_indices[k][m]]])
                                                         vb[vg_indices[k]]['Buffer'] = new_buffer
                                                     else:
                                                         input("Press Enter to continue.")
                                                 except KeyError: # Remap will fail on cloth meshes
-                                                    input("Automatic remap cannot be attempted on a cloth mesh.  Press Enter to continue.")
+                                                    print("Incorrect Mappings: {}".format(", ".join(incorrect_mappings)))
+                                                    print("VGMap is incompatible for automatic remap and repair.")
+                                                    input("Note: Automatic remap cannot be attempted on a cloth mesh.  Press Enter to continue.")
                                         else:
                                             print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
                                             print("Missing bones: {}".format(", ".join(missing_bones[k])))
@@ -267,6 +287,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                             "indexBufferOffset": int((len(composite_ib) - len(ib)) * 3),\
                             "indexCount": int(len(ib) * 3)}
                     else:
+                        print("Skipping submesh {0}, buffer format does not match...".format(existing_submeshes[j]))
                         pass # skip if fmt does not match the first
             except KeyError as e:
                 print("KeyError: Missing value \"{0}\" detected in metadata while processing mesh {1} submesh {2}!".format(e.args[0], \
