@@ -223,47 +223,48 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                                     used_bones = [sorted(list(set([x for y in z for x in y]))) for z in bl_indices]
                                     rev_vgmaps = [{vgmap[x]:x for x in vgmap if vgmap[x] in z} for z in used_bones]
                                     missing_bones = [[x for x in z.values() if x not in correct_vgmap] for z in rev_vgmaps]
-                                    for k in range(len(missing_bones)):
+                                    for k in range(len(rev_vgmaps)):
+                                        do_map_check = True
+                                        indices = [x for y in bl_indices[k] for x in y]
+                                        wt_index = [m for m in wt_indices if semantic_indices[m] == semantic_indices[vg_indices[k]]][0]
+                                        weights_copy = copy.deepcopy(vb[wt_index]['Buffer'])
+                                        # Some games use a longer index buffer than weights buffer (4 bytes for index, VEC3 float for weights)
+                                        while len(bl_indices[k][0]) > len(weights_copy[0]):
+                                            weights_copy = [x+[0.0] for x in weights_copy]
+                                        weights = [x for y in weights_copy for x in y]
+                                        true_indices = sorted(list(set([indices[m] for m in range(len(indices)) if weights[m] > 0.0])))
+                                        true_missing_bones = [x for x in missing_bones[k] if vgmap[x] in true_indices]
                                         if len(missing_bones[k]) > 0:
-                                            indices = [x for y in bl_indices[k] for x in y]
-                                            wt_index = [m for m in wt_indices if semantic_indices[m] == semantic_indices[vg_indices[k]]][0]
-                                            weights_copy = copy.deepcopy(vb[wt_index]['Buffer'])
-                                            # Some games use a longer index buffer than weights buffer (4 bytes for index, VEC3 float for weights)
-                                            while len(bl_indices[k][0]) > len(weights_copy[0]):
-                                                weights_copy = [x+[0.0] for x in weights_copy]
-                                            weights = [x for y in weights_copy for x in y]
-                                            true_indices = sorted(list(set([indices[m] for m in range(len(indices)) if weights[m] > 0.0])))
-                                            true_missing_bones = [x for x in missing_bones[k] if vgmap[x] in true_indices]
-                                            if len(true_missing_bones) == 0:
-                                                incorrect_mappings = [rev_vgmaps[k][x] for x in rev_vgmaps[k] if x in true_indices and not x == correct_vgmap[rev_vgmaps[k][x]]]
-                                                if len(incorrect_mappings) > 0:
-                                                    print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
-                                                    try:
-                                                        used_vg = [rev_vgmaps[k][z] for z in true_indices]
-                                                        if all([x in correct_vgmap.keys() for x in used_vg]):
-                                                            print("VGMap appears compatible, attempting automatic remap and repair...")
-                                                            new_buffer = []
-                                                            for m in range(len(bl_indices[k])):
-                                                                new_buffer.append([correct_vgmap[y] if y in correct_vgmap else 0 for y \
-                                                                    in [rev_vgmaps[k][z] for z in bl_indices[k][m]]])
-                                                            vb[vg_indices[k]]['Buffer'] = new_buffer
-                                                            if max(correct_vgmap.values()) > 255 and fmt['elements'][vg_indices[k]]['Format'] == 'R8G8B8A8_UINT':
-                                                                fmt['elements'][vg_indices[k]]['Format'] = 'R16G16B16A16_UINT'
-                                                                for m in range(vg_indices[k]+1, len(fmt['elements'])):
-                                                                    fmt['elements'][m]['AlignedByteOffset'] = str(int(fmt['elements'][m]['AlignedByteOffset']) + 4)
-                                                                if 'vb0 stride' in fmt:
-                                                                    fmt['vb0 stride'] = str(int(fmt['vb0 stride']) + 4)
-                                                                else:
-                                                                    fmt['stride'] = str(int(fmt['stride']) + 4)
-                                                        else:
-                                                            input("Press Enter to continue.")
-                                                    except KeyError:
-                                                        print("Incorrect Mappings: {}".format(", ".join(incorrect_mappings)))
-                                                        print("VGMap is incompatible for automatic remap and repair.")
-                                                        input("Press Enter to continue.")
-                                            else:
+                                            if len(true_missing_bones) > 0:
+                                                do_map_check = False
                                                 print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
                                                 print("Missing bones: {}".format(", ".join(missing_bones[k])))
+                                                input("Press Enter to continue.")
+                                        incorrect_mappings = [rev_vgmaps[k][x] for x in rev_vgmaps[k] if x in true_indices and not x == correct_vgmap[rev_vgmaps[k][x]]]
+                                        if do_map_check == True and len(incorrect_mappings) > 0 and len(true_missing_bones) == 0:
+                                            print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
+                                            try:
+                                                used_vg = [rev_vgmaps[k][z] for z in true_indices]
+                                                if all([x in correct_vgmap.keys() for x in used_vg]):
+                                                    print("VGMap appears compatible, attempting automatic remap and repair...")
+                                                    new_buffer = []
+                                                    for m in range(len(bl_indices[k])):
+                                                        new_buffer.append([correct_vgmap[y] if y in correct_vgmap else 0 for y \
+                                                            in [rev_vgmaps[k][z] for z in bl_indices[k][m]]])
+                                                    vb[vg_indices[k]]['Buffer'] = new_buffer
+                                                    if max(correct_vgmap.values()) > 255 and fmt['elements'][vg_indices[k]]['Format'] == 'R8G8B8A8_UINT':
+                                                        fmt['elements'][vg_indices[k]]['Format'] = 'R16G16B16A16_UINT'
+                                                        for m in range(vg_indices[k]+1, len(fmt['elements'])):
+                                                            fmt['elements'][m]['AlignedByteOffset'] = str(int(fmt['elements'][m]['AlignedByteOffset']) + 4)
+                                                        if 'vb0 stride' in fmt:
+                                                            fmt['vb0 stride'] = str(int(fmt['vb0 stride']) + 4)
+                                                        else:
+                                                            fmt['stride'] = str(int(fmt['stride']) + 4)
+                                                else:
+                                                    input("Press Enter to continue.")
+                                            except KeyError:
+                                                print("Incorrect Mappings: {}".format(", ".join(incorrect_mappings)))
+                                                print("VGMap is incompatible for automatic remap and repair.")
                                                 input("Press Enter to continue.")
                         if len(composite_vb) == 0:
                             composite_vb = vb
