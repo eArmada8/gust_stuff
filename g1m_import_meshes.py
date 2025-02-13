@@ -159,6 +159,8 @@ def parseG1MforG1MG(g1m_name):
 
 def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_data, e = '<'):
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
+    lod_data = [x for x in model_mesh_metadata["sections"] if x['type'] == 'MESH_LOD'][0]
+    lod_blocks_combined = [x for y in lod_data['data'] for x in y['lod']]
     mesh_with_subs = find_submeshes(model_mesh_metadata) #dict with key as mesh, value as submesh
     # Grab a list of intact meshes (has fmt/ib/vb)
     meshfiles = [x[:-4] for x in glob.glob("*.fmt", root_dir=g1m_name) if (x[:-4] in \
@@ -208,8 +210,9 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                         # Vertex group sanity check, if vgmap available
                         if os.path.exists("{0}/{1}.vgmap".format(g1m_name, existing_submeshes[j])):
                             vgmap = read_struct_from_json("{0}/{1}.vgmap".format(g1m_name, existing_submeshes[j]))
-                            # Proceed only if a complete skeleton is available
-                            if skel_data['jointCount'] > 1 and not skel_data['boneList'][0]['parentID'] < -200000000:
+                            submesh_lod = [x for x in lod_blocks_combined if existing_submeshes[j] in x['indices']][0]
+                            # Proceed only if a complete skeleton is available and this is not a cloth mesh
+                            if submesh_lod['clothID'] == 0 and skel_data['jointCount'] > 1 and not skel_data['boneList'][0]['parentID'] < -200000000:
                                 correct_vgmap = generate_vgmap(subvbs['data'][existing_submeshes[j]]['bonePaletteIndex'], model_mesh_metadata, skel_data)
                                 semantics = [x['SemanticName'] for x in vb]
                                 semantic_indices = [x['SemanticIndex'] for x in vb]
@@ -221,37 +224,47 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                                     rev_vgmaps = [{vgmap[x]:x for x in vgmap if vgmap[x] in z} for z in used_bones]
                                     missing_bones = [[x for x in z.values() if x not in correct_vgmap] for z in rev_vgmaps]
                                     for k in range(len(missing_bones)):
-                                        if len(missing_bones[k]) == 0:
-                                            incorrect_mappings = [rev_vgmaps[k][x] for x in rev_vgmaps[k] if not x == correct_vgmap[rev_vgmaps[k][x]]]
-                                            if len(incorrect_mappings) > 0:
-                                                indices = [x for y in bl_indices[k] for x in y]
-                                                wt_index = [m for m in wt_indices if semantic_indices[m] == semantic_indices[vg_indices[k]]][0]
-                                                weights_copy = copy.deepcopy(vb[wt_index]['Buffer'])
-                                                # Some games use a longer index buffer than weights buffer (4 bytes for index, VEC3 float for weights)
-                                                while len(bl_indices[k][0]) > len(weights_copy[0]):
-                                                    weights_copy = [x+[0.0] for x in weights_copy]
-                                                weights = [x for y in weights_copy for x in y]
-                                                true_indices = sorted(list(set([indices[k] for k in range(len(indices)) if weights[k] > 0.0])))
-                                                print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
-                                                try:
-                                                    used_vg = [rev_vgmaps[k][z] for z in true_indices]
-                                                    if all([x in correct_vgmap.keys() for x in used_vg]):
-                                                        print("VGMap appears compatible, attempting automatic remap and repair...")
-                                                        new_buffer = []
-                                                        for m in range(len(bl_indices[k])):
-                                                            new_buffer.append([correct_vgmap[y] if y in correct_vgmap else 0 for y \
-                                                                in [rev_vgmaps[k][z] for z in bl_indices[k][m]]])
-                                                        vb[vg_indices[k]]['Buffer'] = new_buffer
-                                                    else:
+                                        if len(missing_bones[k]) > 0:
+                                            indices = [x for y in bl_indices[k] for x in y]
+                                            wt_index = [m for m in wt_indices if semantic_indices[m] == semantic_indices[vg_indices[k]]][0]
+                                            weights_copy = copy.deepcopy(vb[wt_index]['Buffer'])
+                                            # Some games use a longer index buffer than weights buffer (4 bytes for index, VEC3 float for weights)
+                                            while len(bl_indices[k][0]) > len(weights_copy[0]):
+                                                weights_copy = [x+[0.0] for x in weights_copy]
+                                            weights = [x for y in weights_copy for x in y]
+                                            true_indices = sorted(list(set([indices[m] for m in range(len(indices)) if weights[m] > 0.0])))
+                                            true_missing_bones = [x for x in missing_bones[k] if vgmap[x] in true_indices]
+                                            if len(true_missing_bones) == 0:
+                                                incorrect_mappings = [rev_vgmaps[k][x] for x in rev_vgmaps[k] if x in true_indices and not x == correct_vgmap[rev_vgmaps[k][x]]]
+                                                if len(incorrect_mappings) > 0:
+                                                    print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
+                                                    try:
+                                                        used_vg = [rev_vgmaps[k][z] for z in true_indices]
+                                                        if all([x in correct_vgmap.keys() for x in used_vg]):
+                                                            print("VGMap appears compatible, attempting automatic remap and repair...")
+                                                            new_buffer = []
+                                                            for m in range(len(bl_indices[k])):
+                                                                new_buffer.append([correct_vgmap[y] if y in correct_vgmap else 0 for y \
+                                                                    in [rev_vgmaps[k][z] for z in bl_indices[k][m]]])
+                                                            vb[vg_indices[k]]['Buffer'] = new_buffer
+                                                            if max(correct_vgmap.values()) > 255 and fmt['elements'][vg_indices[k]]['Format'] == 'R8G8B8A8_UINT':
+                                                                fmt['elements'][vg_indices[k]]['Format'] = 'R16G16B16A16_UINT'
+                                                                for m in range(vg_indices[k]+1, len(fmt['elements'])):
+                                                                    fmt['elements'][m]['AlignedByteOffset'] = str(int(fmt['elements'][m]['AlignedByteOffset']) + 4)
+                                                                if 'vb0 stride' in fmt:
+                                                                    fmt['vb0 stride'] = str(int(fmt['vb0 stride']) + 4)
+                                                                else:
+                                                                    fmt['stride'] = str(int(fmt['stride']) + 4)
+                                                        else:
+                                                            input("Press Enter to continue.")
+                                                    except KeyError:
+                                                        print("Incorrect Mappings: {}".format(", ".join(incorrect_mappings)))
+                                                        print("VGMap is incompatible for automatic remap and repair.")
                                                         input("Press Enter to continue.")
-                                                except KeyError: # Remap will fail on cloth meshes
-                                                    print("Incorrect Mappings: {}".format(", ".join(incorrect_mappings)))
-                                                    print("VGMap is incompatible for automatic remap and repair.")
-                                                    input("Note: Automatic remap cannot be attempted on a cloth mesh.  Press Enter to continue.")
-                                        else:
-                                            print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
-                                            print("Missing bones: {}".format(", ".join(missing_bones[k])))
-                                            input("Press Enter to continue.")
+                                            else:
+                                                print("Warning, vertex group sanity check failed!  This model is very unlikely to correctly render.")
+                                                print("Missing bones: {}".format(", ".join(missing_bones[k])))
+                                                input("Press Enter to continue.")
                         if len(composite_vb) == 0:
                             composite_vb = vb
                             composite_ib = ib
