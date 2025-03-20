@@ -1045,7 +1045,10 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
             c += computeCenterOfMass(position, binormalBuffer[i], clothStuff2Buffer[i], nunoMap, nun_transform_info) * skinWeightList[i][3]
             d = numpy.cross(b,c)
             vertNormBuff.append(b * normal_data[i][1] + c * normal_data[i][0] + d * normal_data[i][2])
-            vertNormBuff[-1] = (vertNormBuff[-1] / numpy.linalg.norm(vertNormBuff[-1])).tolist()
+            if not numpy.linalg.norm(vertNormBuff[-1]) == 0.0:
+                vertNormBuff[-1] = (vertNormBuff[-1] / numpy.linalg.norm(vertNormBuff[-1])).tolist()
+            else:
+                vertNormBuff[-1] = (vertNormBuff[-1] / 0.000001).tolist()
             if tangent_data:
                 tangentBuffer.append(b * tangent_data[i][1] + c * tangent_data[i][0] + d * tangent_data[i][2])
                 tangentBuffer[-1] = (tangentBuffer[-1] / numpy.linalg.norm(tangentBuffer[-1])).tolist() + [tangent_data[i][3]]
