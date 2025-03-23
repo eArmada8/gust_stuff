@@ -77,6 +77,8 @@ It will search the current folder for elixir.json (from Gust Tools) and export t
 
 Cloth meshes are all transformed; there is currently no "skip transformation" option since 4D meshes cannot be incorporated into glTF.
 
+*Note:* Some games, like Atelier Yumia, have models with very strange normals.  If the model normals look very bad when imported into Blender, try importing with "Smooth Shading" instead of "Use Normal Data."
+
 **Command line arguments:**
 `g1m_to_basic_gltf.py [-h] [-o] g1m_filename`
 
@@ -85,3 +87,25 @@ Shows help message.
 
 `-o, --overwrite`
 Overwrite existing files without prompting.
+
+### yumia_g1m_remove_excess_blendindices.py
+Some games, such as Atelier Yumia, have meshes with more BLENDINDICES than BLENDWEIGHT semantics for unknown reasons.  Double click the python script and it will search the current folder for all .g1m files with exported folders, and alter all the .fmt files to hide the excess BLENDINDICES semantics from Blender.  When the extra semantics are hidden, the meshes cannot be imported back to G1M - use yumia_g1m_restore_original_fmts.py to restore the original .fmt files.
+
+Note that this script will make a backup of the original fmts, then overwrite the originals.  Do NOT delete the backups, or yumia_g1m_restore_original_fmts.py cannot restore them.
+
+**Command line arguments:**
+`yumia_g1m_remove_excess_blendindices.py [-h] mesh_folder`
+
+`-h, --help`
+Shows help message.
+
+### yumia_g1m_restore_original_fmts.py
+Double click the python script and it will search the current folder for all .g1m files with exported folders, and restore original .fmt files.  This is in complement to yumia_g1m_remove_excess_blendindices.py which hides excess BLENDINDICES semantics from Blender via altering the .fmt files.  As the meshes cannot be imported back to G1M the extra semantics are hidden, restoring the original .fmt files is required for reimport.
+
+If you have delete the backups, yumia_g1m_restore_original_fmts.py cannot restore them.  ***Do not delete the backups!***
+
+**Command line arguments:**
+`yumia_g1m_restore_original_fmts.py [-h] mesh_folder`
+
+`-h, --help`
+Shows help message.

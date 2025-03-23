@@ -119,9 +119,21 @@ def fix_weight_groups(submesh):
     new_submesh = copy.deepcopy(submesh)
     blend_indices_idx = [i for i in range(len(new_submesh['fmt']['elements'])) if new_submesh['fmt']['elements'][i]['SemanticName'] == 'BLENDINDICES']
     blend_weights_idx = [i for i in range(len(new_submesh['fmt']['elements'])) if new_submesh['fmt']['elements'][i]['SemanticName'] in ['BLENDWEIGHT', 'BLENDWEIGHTS']]
-    if len(blend_indices_idx) == 1 and len(blend_weights_idx) == 1 : # Only needed for meshes with a single set of weights (JOINTS_0 and WEIGHTS_0 only)
-        bone_element_index = blend_indices_idx[0]
-        weight_element_index = blend_weights_idx[0]
+    blidx_layers = dict(sorted({int(new_submesh['fmt']['elements'][i]['SemanticIndex']):i for i in blend_indices_idx}.items()))
+    bl_wt_layers = dict(sorted({int(new_submesh['fmt']['elements'][i]['SemanticIndex']):i for i in blend_weights_idx}.items()))
+    # Remove extra blendindices
+    if len(blend_indices_idx) > len(blend_weights_idx):
+        unknowns = [i for i in range(len(new_submesh['fmt']['elements'])) if new_submesh['fmt']['elements'][i]['SemanticName'] == 'UNKNOWN']
+        j = len(unknowns)
+        for i in blidx_layers:
+            if i >= len(blend_weights_idx):
+                new_submesh['fmt']['elements'][blidx_layers[i]]['SemanticName'] = 'UNKNOWN'
+                new_submesh['fmt']['elements'][blidx_layers[i]]['SemanticIndex'] = str(j)
+                j += 1
+    if len(bl_wt_layers) > 0:
+        max_layer = max(bl_wt_layers.keys())
+        bone_element_index = blidx_layers[max_layer]
+        weight_element_index = bl_wt_layers[max_layer]
         # If the final weight group is missing, re-insert it
         if len(new_submesh['vb'][bone_element_index]['Buffer'][0]) - len(new_submesh['vb'][weight_element_index]['Buffer'][0]) > 0:
             for i in range(len(new_submesh['vb'][bone_element_index]['Buffer'][0]) - len(new_submesh['vb'][weight_element_index]['Buffer'][0])):
@@ -300,29 +312,30 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
                 write_vb_stream(submesh['vb'], vb_stream, gltf_fmt, e=e, interleave = False)
                 block_offset = len(giant_buffer)
                 for element in range(len(gltf_fmt['elements'])):
-                    primitive["attributes"][gltf_fmt['elements'][element]['SemanticName']]\
-                        = len(gltf_data['accessors'])
-                    gltf_data['accessors'].append({"bufferView" : buffer_view,\
-                        "componentType": gltf_fmt['elements'][element]['componentType'],\
-                        "count": len(submesh['vb'][element]['Buffer']),\
-                        "type": gltf_fmt['elements'][element]['accessor_type']})
-                    if gltf_fmt['elements'][element]['SemanticName'] == 'POSITION':
-                        gltf_data['accessors'][-1]['max'] =\
-                            [max([x[0] for x in submesh['vb'][element]['Buffer']]),\
-                             max([x[1] for x in submesh['vb'][element]['Buffer']]),\
-                             max([x[2] for x in submesh['vb'][element]['Buffer']])]
-                        gltf_data['accessors'][-1]['min'] =\
-                            [min([x[0] for x in submesh['vb'][element]['Buffer']]),\
-                             min([x[1] for x in submesh['vb'][element]['Buffer']]),\
-                             min([x[2] for x in submesh['vb'][element]['Buffer']])]
-                    gltf_data['bufferViews'].append({"buffer": 0,\
-                        "byteOffset": block_offset,\
-                        "byteLength": len(submesh['vb'][element]['Buffer']) *\
-                        gltf_fmt['elements'][element]['componentStride'],\
-                        "target" : 34962})
-                    block_offset += len(submesh['vb'][element]['Buffer']) *\
-                        gltf_fmt['elements'][element]['componentStride']
-                    buffer_view += 1
+                    if gltf_fmt['elements'][element]['SemanticName'][:5] in ['POSIT', 'WEIGH', 'JOINT', 'NORMA', 'COLOR', 'TEXCO', 'TANGE']:
+                        primitive["attributes"][gltf_fmt['elements'][element]['SemanticName']]\
+                            = len(gltf_data['accessors'])
+                        gltf_data['accessors'].append({"bufferView" : buffer_view,\
+                            "componentType": gltf_fmt['elements'][element]['componentType'],\
+                            "count": len(submesh['vb'][element]['Buffer']),\
+                            "type": gltf_fmt['elements'][element]['accessor_type']})
+                        if gltf_fmt['elements'][element]['SemanticName'] == 'POSITION':
+                            gltf_data['accessors'][-1]['max'] =\
+                                [max([x[0] for x in submesh['vb'][element]['Buffer']]),\
+                                 max([x[1] for x in submesh['vb'][element]['Buffer']]),\
+                                 max([x[2] for x in submesh['vb'][element]['Buffer']])]
+                            gltf_data['accessors'][-1]['min'] =\
+                                [min([x[0] for x in submesh['vb'][element]['Buffer']]),\
+                                 min([x[1] for x in submesh['vb'][element]['Buffer']]),\
+                                 min([x[2] for x in submesh['vb'][element]['Buffer']])]
+                        gltf_data['bufferViews'].append({"buffer": 0,\
+                            "byteOffset": block_offset,\
+                            "byteLength": len(submesh['vb'][element]['Buffer']) *\
+                            gltf_fmt['elements'][element]['componentStride'],\
+                            "target" : 34962})
+                        block_offset += len(submesh['vb'][element]['Buffer']) *\
+                            gltf_fmt['elements'][element]['componentStride']
+                        buffer_view += 1
                 vb_stream.seek(0)
                 giant_buffer += vb_stream.read()
                 vb_stream.close()

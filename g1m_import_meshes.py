@@ -219,6 +219,9 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                                 if 'BLENDINDICES' in semantics:
                                     vg_indices = [k for k in range(len(semantics)) if semantics[k] == 'BLENDINDICES']
                                     wt_indices = [k for k in range(len(semantics)) if semantics[k] in ['BLENDWEIGHT', 'BLENDWEIGHTS']]
+                                    if len(vg_indices) > len(wt_indices): # Do not evaluate excess BLENDINDICES
+                                        blidx_layers = dict(sorted({int(vb[i]['SemanticIndex']):i for i in vg_indices}.items()))
+                                        vg_indices = [blidx_layers[layer] for layer in blidx_layers if layer < len(wt_indices)]
                                     bl_indices = [vb[x]['Buffer'] for x in vg_indices]
                                     used_bones = [sorted(list(set([x for y in z for x in y]))) for z in bl_indices]
                                     rev_vgmaps = [{vgmap[x]:x for x in vgmap if vgmap[x] in z} for z in used_bones]
