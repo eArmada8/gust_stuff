@@ -118,18 +118,27 @@ def calc_abs_rotation_position(bone, parent_bone):
     return(bone)
 
 # In fmt_g1m, used only on primary skeleton; this function is performed in combine_skeleton() for 2nd layer
-def calc_abs_skeleton(base_skel_data):
+def calc_abs_skeleton (base_skel_data):
+    def process_child_bone (base_skel_data, bone):
+        # Transform from relative rotation / position to absolute
+        current_bone = base_skel_data['boneList'][bone]
+        parent_bone = [x for x in base_skel_data['boneList'] if x['i'] == base_skel_data['boneList'][bone]['parentID']][0]
+        base_skel_data['boneList'][bone] = calc_abs_rotation_position(current_bone, parent_bone)
+        for i in range(len(base_skel_data['boneList'][bone]['children'])):
+            base_skel_data = process_child_bone (base_skel_data, base_skel_data['boneList'][bone]['children'][i])
+        return(base_skel_data)
     for bone in range(len(base_skel_data['boneList'])):
-        parentId = base_skel_data['boneList'][bone]['parentID']
-        if parentId > -1:
-            current_bone = base_skel_data['boneList'][bone]
-            parent_bone = [x for x in base_skel_data['boneList'] if x['i'] == parentId][0]
-            # Transform from relative rotation / position to absolute
-            base_skel_data['boneList'][bone] = calc_abs_rotation_position(current_bone, parent_bone)
-        else: #First bone (bone_0) is already absolute, no need to transform
-            base_skel_data['boneList'][bone]['abs_q'] = base_skel_data['boneList'][bone]['q_wxyz']
-            base_skel_data['boneList'][bone]['abs_p'] = base_skel_data['boneList'][bone]['pos_xyz']
-            base_skel_data['boneList'][bone]['abs_tm'] = base_skel_data['boneList'][bone]['boneMatrixTransform']
+        base_skel_data['boneList'][bone]['children'] = []
+    for bone in range(len(base_skel_data['boneList'])):
+        if base_skel_data['boneList'][bone]['parentID'] > -1:
+            base_skel_data['boneList'][base_skel_data['boneList'][bone]['parentID']]['children'].append(bone)
+    for bone in [i for i in range(len(base_skel_data['boneList'])) if base_skel_data['boneList'][i]['parentID'] == -1]:
+        #First bone (bone_0) is already absolute, no need to transform
+        base_skel_data['boneList'][bone]['abs_q'] = base_skel_data['boneList'][bone]['q_wxyz']
+        base_skel_data['boneList'][bone]['abs_p'] = base_skel_data['boneList'][bone]['pos_xyz']
+        base_skel_data['boneList'][bone]['abs_tm'] = base_skel_data['boneList'][bone]['boneMatrixTransform']
+        for i in range(len(base_skel_data['boneList'][bone]['children'])):
+            base_skel_data = process_child_bone (base_skel_data, base_skel_data['boneList'][bone]['children'][i])
     return(base_skel_data)
 
 def name_bones(skel_data, oid):
