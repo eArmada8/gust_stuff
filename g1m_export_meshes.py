@@ -926,8 +926,13 @@ def generate_vb(index, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
                 vb_stream = bytes()
                 for i in range(vb['data'][vb_attr['data'][index]['buffer_list'][0]]['count']):
                     for j in range(len(vb_attr['data'][index]['buffer_list'])):
-                        f.seek(vb['data'][vb_attr['data'][index]['buffer_list'][j]]['offset']\
-                            + (vb['data'][vb_attr['data'][index]['buffer_list'][j]]['stride'] * i))
+                        if i < vb['data'][vb_attr['data'][index]['buffer_list'][j]]['count']:
+                            f.seek(vb['data'][vb_attr['data'][index]['buffer_list'][j]]['offset']\
+                                + (vb['data'][vb_attr['data'][index]['buffer_list'][j]]['stride'] * i))
+                        else: # Some meshes use small repeating buffers, it seems.
+                            f.seek(vb['data'][vb_attr['data'][index]['buffer_list'][j]]['offset']\
+                                + (vb['data'][vb_attr['data'][index]['buffer_list'][j]]['stride']\
+                                * (i % vb['data'][vb_attr['data'][index]['buffer_list'][j]]['count'])))
                         vb_stream += f.read(vb['data'][vb_attr['data'][index]['buffer_list'][j]]['stride'])
                 vb_struct = read_vb_stream(vb_stream, fmts[index], e)
             else: # 
