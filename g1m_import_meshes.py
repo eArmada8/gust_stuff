@@ -168,6 +168,10 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
         [x.split('.vb')[0] for x in glob.glob("*.vb*", root_dir=g1m_name)])]
     # Remove any empty mesh files from the list of intact meshes
     meshfiles = [x for x in meshfiles if os.path.getsize('{0}/{1}.ib'.format(g1m_name, x)) > 0]
+    # Remove mesh files if the correct vertex buffer is missing
+    meshfiles = [x for x in meshfiles if (os.path.exists('{0}/{1}.vb0'.format(g1m_name, x)) \
+        if 'vb0 stride' == open('{0}/{1}.fmt'.format(g1m_name, x)).read(10) else \
+        os.path.exists('{0}/{1}.vb'.format(g1m_name, x)))]
     composite_vbs = []
     current_vbsub = 0
     for i in mesh_with_subs:
