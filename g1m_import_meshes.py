@@ -165,7 +165,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
     # Grab a list of intact meshes (has fmt/ib/vb)
     meshfiles = [x[:-4] for x in glob.glob("*.fmt", root_dir=g1m_name) if (x[:-4] in \
         [x[:-3] for x in glob.glob("*.ib", root_dir=g1m_name)] and x[:-4] in \
-        [x[:-3] for x in glob.glob("*.vb", root_dir=g1m_name)])]
+        [x.split('.vb')[0] for x in glob.glob("*.vb*", root_dir=g1m_name)])]
     # Remove any empty mesh files from the list of intact meshes
     meshfiles = [x for x in meshfiles if os.path.getsize('{0}/{1}.ib'.format(g1m_name, x)) > 0]
     composite_vbs = []
