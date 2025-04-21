@@ -22,6 +22,11 @@ def restore_fmts (mesh_folder):
     fmts = glob.glob('{}/*.fmt.original'.format(mesh_folder))
     for fmt_file in fmts:
         shutil.copy2(fmt_file, fmt_file[:-8])
+        submesh_name = fmt_file[:-13]
+        if not os.path.exists(submesh_name + '.vb')\
+            and os.path.exists(submesh_name + '.vb0')\
+            and open(fmt_file[:-8]).read(6) == 'stride':
+            os.rename(submesh_name + '.vb0', submesh_name + '.vb')
     return
 
 if __name__ == "__main__":
