@@ -1,5 +1,6 @@
-# Atelier Yumia (and some other KT games) have more BLENDINDICES than BLENDWEIGHTS.
-# This script will rename the excess BLENDINDICES, hiding them from Blender.  Use
+# Atelier Yumia (and some other KT games) have more BLENDINDICES than BLENDWEIGHTS
+# (Or more BLENDWEIGHTS than BLENDINDICES).
+# This script will rename the excess semantics, hiding them from Blender.  Use
 # yumia_g1m_restore_original_fmts.py to restore the BLENDINDICES prior to import
 # back to G1M.  NOTE: Do NOT delete the .fmt.original files, the restore script needs
 # them to restore the proper semantics!
@@ -35,6 +36,15 @@ def process_fmts (mesh_folder):
                 if i >= len(blendweights):
                     fmt['elements'][blidx_layers[i]]['SemanticName'] = 'UNKNOWN'
                     fmt['elements'][blidx_layers[i]]['SemanticIndex'] = str(j)
+                    j += 1
+            write_fmt(fmt, fmt_file)
+        elif len(blendindices) < len(blendweights):
+            blwt_layers = dict(sorted({int(fmt['elements'][i]['SemanticIndex']):i for i in blendweights}.items()))
+            j = len(unknowns)
+            for i in blwt_layers:
+                if i >= len(blendindices):
+                    fmt['elements'][blwt_layers[i]]['SemanticName'] = 'UNKNOWN'
+                    fmt['elements'][blwt_layers[i]]['SemanticIndex'] = str(j)
                     j += 1
             write_fmt(fmt, fmt_file)
     return
