@@ -14,6 +14,8 @@ None of this would be possible without the work of DarkStarSword and his amazing
 
 I am very thankful for Joschuka, eterniti, DarkStarSword, the THRG team and VitaSmith for their brilliant work and for sharing that work so freely.
 
+This toolset also utilizes the tstrip module (python file format interface) adapted for [Sega_NN_tools](https://github.com/Argx2121/Sega_NN_tools/) by Argx2121, and I am grateful for its use - it is unmodified and is distributed under its original license.
+  
 Finally, I want to thank the folks who wrote the glTF specs, tutorial and validator (github/KhronosGroup).
 
 ## Requirements:
@@ -22,6 +24,7 @@ Finally, I want to thank the folks who wrote the glTF specs, tutorial and valida
 3. The output can be imported into Blender using DarkStarSword's amazing plugin: https://github.com/DarkStarSword/3d-fixes/blob/master/blender_3dmigoto.py (tested on commit [5fd206c](https://raw.githubusercontent.com/DarkStarSword/3d-fixes/5fd206c52fb8c510727d1d3e4caeb95dac807fb2/blender_3dmigoto.py))
 4. g1m_export_meshes.py is dependent on lib_fmtibvb.py, which must be in the same folder.  
 g1m_import_meshes.py is dependent on both g1m_export_meshes.py and lib_fmtibvb.py.
+5. g1m_import_meshes.py requires the pyffi_tstrip module (the pyffi_tstrip folder and its contents) in the same folder as the script in order to generate triangle strips (used by Atelier Sophie).  If the module is missing, the G1M file will be built with triangle lists instead of triangle strips.
 
 ## Usage:
 ### g1m_export_meshes.py
@@ -63,6 +66,10 @@ This will also change the command line argument `-s, --skip_transform` into `-t,
 Double click the python script and it will search the current folder for all .g1m files with exported folders, and import the meshes in the folder back into g1mmdl file.  Additionally, it will parse the metadata JSON file (G1MG section) if available and use that information to rebuild the entire geometry (G1MG) section of the G1M file.  This script requires a working g1m file already be present as it does not reconstruct the entire file; only the G1MG section.  The remaining parts of the file are copied unaltered from the intact g1m file.
 
 It will make a backup of the original, then overwrite the original.  It will not overwrite backups; for example if "model.g1m.bak" already exists, then it will write the backup to "model.g1m.bak1", then to "model.g1m.bak2", and so on.
+
+Certain games (e.g. Atelier Sophie) use triangle strips instead of triangle lists.  These strips are converted to lists at the time of export.  If the pyffi_tstrip module (the `pyffi_tstrip` folder and its contents) are present alongside g1m_import_meshes.py, then triangle lists will be converted back into triangle strips at the time of import; otherwise the triangle lists will be used as-is.
+
+*NOTE:* Newer versions of the Blender plugin export .vb0 files instead of .vb files.  Do not attempt to rename .vb0 files to .vb files, just leave them as-is and the scripts will look for the correct file.
 
 **Command line arguments:**
 `g1m_import_meshes.py [-h] mdl_filename`

@@ -3,7 +3,8 @@
 # Based primarily off the work of GitHub/Joschuka, GitHub/three-houses-research-team,
 # and GitHub/eterniti (G1M Tools), huge thank you!
 #
-# This code depends on g1m_export_meshes.py and lib_fmtibvb.py being in the same folder.
+# This code depends on g1m_export_meshes.py, lib_fmtibvb.py and the pyffi_tstrip module
+# being in the same folder.
 #
 # Steps:
 # 1. Run g1m_export_meshes.py
@@ -23,6 +24,12 @@ except ModuleNotFoundError as e:
     print("Python module missing! {}".format(e.msg))
     input("Press Enter to abort.")
     raise
+
+try:
+    from pyffi_tstrip.tristrip import *
+    pyffi_tstrip_available = True
+except ModuleNotFoundError as e:
+    pyffi_tstrip_available = False
 
 def parseG1MforG1MF(g1m_name):
     with open(g1m_name + '.g1m', "rb") as f:
@@ -162,6 +169,10 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
     lod_data = [x for x in model_mesh_metadata["sections"] if x['type'] == 'MESH_LOD'][0]
     lod_blocks_combined = [x for y in lod_data['data'] for x in y['lod']]
     mesh_with_subs = find_submeshes(model_mesh_metadata) #dict with key as mesh, value as submesh
+    # Load pyffi_tstrip if the original G1M uses triangle strips
+    if any([x['indexBufferPrimType'] == 4 for x in subvbs['data']]) and pyffi_tstrip_available == False:
+        print("Original G1M index topology is trianglestrip but pyffi_tstrip module is missing!")
+        input("Triangle lists will be used instead of strips.  Press Enter to continue.")
     # Grab a list of intact meshes (has fmt/ib/vb)
     meshfiles = [x[:-4] for x in glob.glob("*.fmt", root_dir=g1m_name) if (x[:-4] in \
         [x[:-3] for x in glob.glob("*.ib", root_dir=g1m_name)] and x[:-4] in \
@@ -273,6 +284,12 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                                                 print("Incorrect Mappings: {}".format(", ".join(incorrect_mappings)))
                                                 print("VGMap is incompatible for automatic remap and repair.")
                                                 input("Press Enter to continue.")
+                        orig_indexBufferPrimType = subvbs['data'][mesh_with_subs[i][0]]['indexBufferPrimType']
+                        if pyffi_tstrip_available == True and orig_indexBufferPrimType == 4 and fmt["topology"] == "trianglelist":
+                            ib = [stripify(ib, stitchstrips = True)[0]]
+                            fmt["topology"] = "trianglestrip"
+                        ib = [x for y in ib for x in y]
+                        indexBufferOffset = len(composite_ib)
                         if len(composite_vb) == 0:
                             composite_vb = vb
                             composite_ib = ib
@@ -282,8 +299,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                             for k in range(len(composite_vb)):
                                 composite_vb[k]['Buffer'].extend(vb[k]['Buffer'])
                             for k in range(len(ib)):
-                                for l in range(len(ib[k])):
-                                    ib[k][l] += ib_offset
+                                ib[k] += ib_offset
                             composite_ib.extend(ib)
                         # Determine indexBufferPrimType, which is set in submesh section instead of vertex attribute section
                         if fmt["topology"] == "trianglelist":
@@ -305,8 +321,8 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                             "indexBufferPrimType": indexBufferPrimType,\
                             "vertexBufferOffset": len(composite_vb[0]['Buffer']) - len(vb[0]['Buffer']),\
                             "vertexCount": len(vb[0]['Buffer']),\
-                            "indexBufferOffset": int((len(composite_ib) - len(ib)) * 3),\
-                            "indexCount": int(len(ib) * 3)}
+                            "indexBufferOffset": indexBufferOffset,\
+                            "indexCount": len(ib)}
                     else:
                         print("Skipping submesh {0}, buffer format does not match...".format(existing_submeshes[j]))
                         pass # skip if fmt does not match the first
@@ -320,7 +336,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                 # Cannot seem to delete entire meshes, so will generate a dummy mesh if all submeshes have been deleted
                 original_fmts = generate_fmts(model_mesh_metadata) # A little inefficient to run JIT but very helpful with error checking
                 fmt = original_fmts[i]
-                composite_ib = generate_ib(i, g1mg_stream, model_mesh_metadata, original_fmts, e=e)
+                composite_ib = [x for y in generate_ib(i, g1mg_stream, model_mesh_metadata, original_fmts, e=e) for x in y]
                 composite_vb = generate_vb(i, g1mg_stream, model_mesh_metadata, original_fmts, e=e)
                 # Place an empty submesh in the mesh
                 vbsub_info = {mesh_with_subs[i][0]: {"submeshFlags": subvbs['data'][mesh_with_subs[i][0]]['submeshFlags'],\
@@ -492,11 +508,11 @@ def build_g1mg(g1m_name, skel_data, e = '<'):
                     index_stream = io.BytesIO()
                     for j in range(len(composite_vbs)):
                         # This assumes I am reversing my own code, no exotic formats!
-                        index_stream.write(struct.pack(e+"2I", len([x for y in composite_vbs[j]['ib'] for x in y]), \
+                        index_stream.write(struct.pack(e+"2I", len(composite_vbs[j]['ib']), \
                             int(composite_vbs[j]['fmt']['format'].split('_FORMAT_R')[1].split('_UINT')[0])))
                         if model_mesh_metadata["version"] > 0x30303430:
                             index_stream.write(struct.pack(e+"I", model_mesh_metadata['sections'][i]['data'][composite_vbs[j]['original_vb_num']]["unknown1"]))
-                        write_ib_stream([x for y in composite_vbs[j]['ib'] for x in y], index_stream, composite_vbs[j]['fmt'], e)
+                        write_ib_stream(composite_vbs[j]['ib'], index_stream, composite_vbs[j]['fmt'], e)
                         while (index_stream.tell() % 4) > 0:
                             index_stream.write(b'\x00')
                     index_stream.seek(0,0)
