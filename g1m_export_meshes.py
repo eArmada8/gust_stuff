@@ -839,6 +839,7 @@ def parseG1MG(g1mg_chunk,e):
                             if (lod["indexCount"] > 0):
                                 lod["indices"] = struct.unpack(e+"{0}I".format(lod["indexCount"]), f.read(4*lod["indexCount"]))
                             else:
+                                lod["indices"] = []
                                 f.seek(4,1)
                             lods.append(lod)
                         lod_block["lod"] = lods
