@@ -333,9 +333,9 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
                             "byteLength": len(submesh['vb'][element]['Buffer']) *\
                             gltf_fmt['elements'][element]['componentStride'],\
                             "target" : 34962})
-                        block_offset += len(submesh['vb'][element]['Buffer']) *\
-                            gltf_fmt['elements'][element]['componentStride']
                         buffer_view += 1
+                    block_offset += len(submesh['vb'][element]['Buffer']) *\
+                        gltf_fmt['elements'][element]['componentStride']
                 vb_stream.seek(0)
                 giant_buffer += vb_stream.read()
                 vb_stream.close()
