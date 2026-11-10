@@ -18,6 +18,10 @@ This toolset also utilizes the tstrip module (python file format interface) adap
   
 Finally, I want to thank the folks who wrote the glTF specs, tutorial and validator (github/KhronosGroup).
 
+## AI Disclosure
+
+I used AI (Claude, attached to ghidra) as a debugger / decompiler to help me debug persistent errors, and I wrote the code to fix those errors.
+
 ## Requirements:
 1. Python 3.10 and newer is required for use of these scripts.  It is free from the Microsoft Store, for Windows users.  For Linux users, please consult your distro.
 2. The numpy and pyquaternion modules for python are needed.  Install by typing "python3 -m pip install pyquaternion" in the command line / shell.  (When installing pyquaternion, numpy will automatically be installed alongside pyquaternion.  The io, re, struct, sys, os, shutil, glob, copy, json, argparse modules are also required, but these are all already included in most basic python installations.)

@@ -118,7 +118,7 @@ def build_g1mf(new_g1mg_stream, g1m_name, e = '<'):
     new_g1mf += struct.pack(e+"2I", model_mesh_metadata["sections"][mkeys["JOINT_PALETTES"]]["count"],\
         sum([len(x["joints"]) for x in model_mesh_metadata["sections"][mkeys["JOINT_PALETTES"]]["data"]]))
     new_g1mf += struct.pack(e+"I", model_mesh_metadata["sections"][mkeys["INDEX_BUFFER"]]["count"])
-    # This can't be correct, perhaps the second value is total unknown2==1 or something like that??
+    # This can't be correct, the second value is probably total primitives but every file I have is 1 primitive per submesh
     new_g1mf += struct.pack(e+"2I", model_mesh_metadata["sections"][mkeys["SUBMESH"]]["count"],\
         model_mesh_metadata["sections"][mkeys["SUBMESH"]]["count"])
     lod_group_submesh_count = 0
@@ -309,6 +309,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                         else:
                             indexBufferPrimType = 1
                         # Update submesh info with new offsets and counts
+                        # No support yet for multiple primitives, no sample files to study
                         vbsub_info[existing_submeshes[j]] = {"submeshFlags": subvbs['data'][existing_submeshes[j]]['submeshFlags'],\
                             "vertexBufferIndex": i,\
                             "bonePaletteIndex": subvbs['data'][existing_submeshes[j]]['bonePaletteIndex'],\
@@ -317,7 +318,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                             "shaderParamIndex": subvbs['data'][existing_submeshes[j]]['shaderParamIndex'],\
                             "materialIndex": subvbs['data'][existing_submeshes[j]]['materialIndex'],\
                             "indexBufferIndex": i,\
-                            "unknown2": subvbs['data'][existing_submeshes[j]]['unknown2'],\
+                            "primitive_count": 1,\
                             "indexBufferPrimType": indexBufferPrimType,\
                             "vertexBufferOffset": len(composite_vb[0]['Buffer']) - len(vb[0]['Buffer']),\
                             "vertexCount": len(vb[0]['Buffer']),\
@@ -347,7 +348,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                             "shaderParamIndex": subvbs['data'][mesh_with_subs[i][0]]['shaderParamIndex'],\
                             "materialIndex": subvbs['data'][mesh_with_subs[i][0]]['materialIndex'],\
                             "indexBufferIndex": i,\
-                            "unknown2": subvbs['data'][mesh_with_subs[i][0]]['unknown2'],\
+                            "primitive_count": 1,\
                             "indexBufferPrimType": subvbs['data'][mesh_with_subs[i][0]]['indexBufferPrimType'],\
                             "vertexBufferOffset": 0,\
                             "vertexCount": 0,\
@@ -544,12 +545,11 @@ def build_g1mg(g1m_name, skel_data, e = '<'):
                     lod_section = bytes()
                     for j in range(len(model_mesh_metadata['sections'][i]['data'])):
                         lod_block = struct.pack(e+"I", model_mesh_metadata['sections'][i]['data'][j]['LOD'])
-                        if model_mesh_metadata["version"] > 0x30303330:
-                            lod_block += struct.pack(e+"2I", model_mesh_metadata['sections'][i]['data'][j]['Group'],\
-                                model_mesh_metadata['sections'][i]['data'][j]['GroupEntryIndex'])
+                        lod_block += struct.pack(e+"2I", model_mesh_metadata['sections'][i]['data'][j]['Group'],\
+                            model_mesh_metadata['sections'][i]['data'][j]['GroupEntryIndex'])
                         lod_block += struct.pack(e+"2I", model_mesh_metadata['sections'][i]['data'][j]['submeshCount1'],\
                             model_mesh_metadata['sections'][i]['data'][j]['submeshCount2'])
-                        if model_mesh_metadata["version"] > 0x30303340:
+                        if model_mesh_metadata["version"] >= 0x30303432:
                             lod_block += struct.pack(e+"4I", model_mesh_metadata['sections'][i]['data'][j]['lodRangeStart'],\
                                 model_mesh_metadata['sections'][i]['data'][j]['lodRangeLength'],\
                                 model_mesh_metadata['sections'][i]['data'][j]['unknown1'],\
@@ -558,21 +558,18 @@ def build_g1mg(g1m_name, skel_data, e = '<'):
                             #First cull submeshes that have been deleted, then map to new indices
                             new_indices = [x for x in list(model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['indices']) if x in existing_subvb]
                             new_indices = [subvb_old_to_new[x]['new_index'] for x in new_indices]
-                            name = model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['name'].encode()
+                            name = model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['name'][:16].encode() # Truncate if needed
                             while len(name) < 16:
                                 name += b'\x00'
                             lod_block += name
-                            lod_block += struct.pack(e+"2H2I",\
+                            lod_block += struct.pack(e+"3H2xI",\
                                 model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['clothID'],\
                                 model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['unknown'],\
                                 model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['NUNID'],\
                                 len(new_indices))
-                            # In actual G1M, empty sections are allowed with padding, so this may need exploration
                             if len(new_indices) > 0:
                                 #Map to new indices
                                 lod_block += struct.pack(e+"{0}I".format(len(new_indices)), *new_indices)
-                            else:
-                                lod_block += struct.pack(e+"I", 0)
                         lod_section += lod_block
                     new_g1mg += struct.pack(e+"3I", model_mesh_metadata['sections'][i]['magic'], len(lod_section)+12,\
                         len(model_mesh_metadata['sections'][i]['data'])) + lod_section

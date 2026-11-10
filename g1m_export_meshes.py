@@ -213,14 +213,18 @@ def parseNUNO1(chunkVersion, f, e):
 def parseNUNO2(chunkVersion, f, e):
     nuno2_block = {}
     nuno2_block['name'] = "nuno2"
-    nuno2_block['parentBoneID'] = None
-    # Not sure if it should just be nuno2_block['parentBoneID'], = struct.unpack(e+"I",f.read(4))
-    # instead of the next 2 lines
-    a,b = struct.unpack("<HH", f.read(4))
-    nuno2_block['parentBoneID'] = a if e == '<' else b
-    f.read(0x68)
-    nuno2_block['controlPoint'] = struct.unpack("fff", f.read(12))
-    f.read(0x08)
+    parent_bone_flag, unk, count_a, count_b = struct.unpack(e+"Ii2I",f.read(16))
+    nuno2_block['flag'], nuno2_block['parentBoneID'] = parent_bone_flag & 0xFFFF0000, parent_bone_flag & 0xFFFF
+    nuno2_block['a'] = []
+    if chunkVersion < 0x30303234:
+        f.seek(48,1)
+    elif chunkVersion >= 0x30303238:
+        f.seek(76,1)
+    else:
+        f.seek(64,1)
+    for _ in range(count_a):
+        nuno2_block['a'].append(list(struct.unpack(e+"I12x4f",f.read(0x20))))
+    nuno2_block['b'] = struct.unpack(e+"{}I".format(count_b), f.read(4 * count_b))
     return(nuno2_block)
 
 def parseNUNO3(chunkVersion, f, e):
@@ -237,12 +241,13 @@ def parseNUNO3(chunkVersion, f, e):
     f.read(4)
     skip2, = struct.unpack(e+"i", f.read(4))
     skip3, = struct.unpack(e+"i", f.read(4))
-    skip4, = struct.unpack(e+"i", f.read(4))
-    if chunkVersion < 0x30303332:
-        f.read(0xA8)
-        if chunkVersion >= 0x30303235:
-            f.read(0x10)
+    if chunkVersion < 0x30303330:
+        skip4 = 0
+        f.read(0xAC)
+        #if chunkVersion >= 0x30303235:
+            #f.read(0x10)
     else:
+        skip4, = struct.unpack(e+"i", f.read(4))
         f.read(0x8)
         current_offset = f.tell()
         temp, = struct.unpack(e+"I", f.read(4))
@@ -277,18 +282,21 @@ def parseNUNO5(chunkVersion, f, e, entryIDtoNunoID):
     lodCount, = struct.unpack(e+"I", f.read(4))
     f.seek(8,1)
     nuno5_block['entryID'], nuno5_block['entryIDflag'] = struct.unpack(e+"2H", f.read(4))
-    if (nuno5_block['entryID'] in entryIDtoNunoID) and (nuno5_block['entryIDflag'] & 0x7FF):
-        nuno5_block['parentSetID'] = entryIDtoNunoID[nuno5_block['entryID']]
+    #if (nuno5_block['entryID'] in entryIDtoNunoID) and (nuno5_block['entryIDflag'] & 0x7FF):
+        #nuno5_block['parentSetID'] = entryIDtoNunoID[nuno5_block['entryID']]
     f.seek(12,1)
     for i in range(lodCount):
         skip10Size = 0
-        skip10Count = 0
         controlPointCount, = struct.unpack(e+"I", f.read(4))
         flags, = struct.unpack(e+"I", f.read(4))
         skip = struct.unpack(e+"9I", f.read(36))
         bUseSkip10, = struct.unpack(e+"I", f.read(4))
         if bUseSkip10:
-            skip10Size, skip10Count = struct.unpack(e+"2I", f.read(8))
+            current_offset = f.tell()
+            skip10BlockSize, = struct.unpack(e+"I", f.read(4))
+            skip10Counts = struct.unpack(e+"5I", f.read(20))
+            skip10Size = skip10Counts[0] * 8 + skip10Counts[3] * 4
+            f.seek(current_offset + skip10BlockSize)
         current_offset = f.tell()
         cpOffset, = struct.unpack(e+"I", f.read(4))
         f.seek(current_offset+cpOffset,0)
@@ -313,16 +321,21 @@ def parseNUNO5(chunkVersion, f, e, entryIDtoNunoID):
             f.seek(32 * controlPointCount,1)
         if flags & 0x2:
             f.seek(24 * controlPointCount,1)
-        f.seek(skip[0] * 4 + skip[1] * 12 + skip[2] * 16 + skip[3] * 12 +\
-            skip[4] * 8 + skip[5] * 48 + skip[6] * 72 + skip[7] * 32, 1)
-        if flags & 0x4:
+        # Skips
+        f.seek(skip[0] * 4 + skip[1] * 12 + skip[2] * 16 + skip[3] * 12 + skip[4] * 8, 1)
+        for _ in range(skip[5]):
+            size = struct.unpack(e+"4H", f.read(8))[3]
+            f.seek(size - 8, 1)
+        f.seek(skip[6] * (0x48 if chunkVersion >= 0x30303333 else 0x24), 1)
+        f.seek(skip[7] * 32, 1)
+        if (flags & 0x4) and (chunkVersion >= 0x30303333):
             f.seek(4 * controlPointCount,1)
-        if skip[8] > 0:
+        if (skip[8] > 0) and (chunkVersion >= 0x30303333):
             for j in range(skip[8]):
                 current_offset = f.tell()
                 tempCount, = struct.unpack(e+"I", f.read(4))
                 f.seek(current_offset + (4 * tempCount) + 16)
-        f.seek(skip10Size * skip10Count,1)
+        f.seek(skip10Size,1)
     return(nuno5_block)
 
 def parseNUNV1(chunkVersion, f, e):
@@ -390,12 +403,13 @@ def parseNUNO(nuno_chunk, e):
         nuno_section["chunks"] = []
         for i in range(nuno_section["chunk_count"]):
             if f.tell() < len(nuno_chunk):
+                subsection_start = f.tell()
                 chunk = {}
                 chunk["Type"],chunk["size"],chunk["subchunk_count"] = struct.unpack(e+"III", f.read(12))
                 chunk["subchunks"] = []
                 entryIDtoNunoID = {}
                 if chunk["Type"] in [0x00030001, 0x00030002, 0x00030003, 0x00030005]: # Skip NUNO4, unknown
-                    if nuno_section["version"] >= 0x30303335:
+                    if nuno_section["version"] >= 0x30303335 and chunk["Type"] == 0x00030005:
                         f.seek(4,1)
                     for j in range(chunk["subchunk_count"]):
                         if chunk["Type"] == 0x00030001:
@@ -408,27 +422,10 @@ def parseNUNO(nuno_chunk, e):
                             chunk["subchunks"].append(parseNUNO5(nuno_section["version"],f,e, entryIDtoNunoID))
                             if not chunk["subchunks"][-1]["entryID"] in entryIDtoNunoID.keys():
                                 entryIDtoNunoID[chunk["subchunks"][-1]["entryID"]] = j
-                else:
-                    f.seek(chunk["size"]-12,1)
                 if chunk["Type"] == 0x00030005:
-                    # Untested, the model I have access to does not have subsets
-                    nunoIDToSubsetMap = {}
-                    for j in range(len(chunk["subchunks"])):
-                        if chunk["subchunks"][j]["parentSetID"] >= 0:
-                            if not (chunk["subchunks"][j]["parentSetID"] in nunoIDToSubsetMap.keys()):
-                            # New Map
-                                tempMap = {}
-                                parentchunk = chunk["subchunks"][chunk["subchunks"][j]["parentSetID"]]
-                                for k in range(len(parentchunk["controlPoints"])):
-                                    tempMap[sum(parentchunk["controlPoints"][i])] = k
-                                nunoIDToSubsetMap[chunk["subchunks"][j]["parentSetID"]] = tempMap
-                            else:
-                            #Existing Map
-                                tempMap = nunoIDToSubsetMap[chunk["subchunks"][j]["parentSetID"]]
-                                for k in range(len(chunk["subchunks"][j]["controlPoints"])):
-                                    if sum(chunk["subchunks"][j]["controlPoints"][k]) in tempMap.keys(): #should always be true?
-                                        chunk["subchunks"][j]["influences"][k]['P1'] = \
-                                            tempMap[sum(chunk["subchunks"][j]["controlPoints"][k])]
+                    # Subset code would go here - I have no samples and my prior code was hopelessly broken
+                    pass
+                f.seek(subsection_start + chunk["size"])
                 nuno_section["chunks"].append(chunk)
     return(nuno_section)
 
@@ -806,9 +803,20 @@ def parseG1MG(g1mg_chunk,e):
                         submesh_info = {'id_referenceonly': j}
                         submesh_info["submeshFlags"], submesh_info["vertexBufferIndex"], submesh_info["bonePaletteIndex"],\
                         submesh_info["boneIndex"], submesh_info["unknown"], submesh_info["shaderParamIndex"],\
-                        submesh_info["materialIndex"], submesh_info["indexBufferIndex"], submesh_info["unknown2"],\
-                        submesh_info["indexBufferPrimType"], submesh_info["vertexBufferOffset"], submesh_info["vertexCount"],\
-                        submesh_info["indexBufferOffset"], submesh_info["indexCount"] = struct.unpack(e+"14I", f.read(56))
+                        submesh_info["materialIndex"], submesh_info["indexBufferIndex"], submesh_info["primitive_count"] = struct.unpack(e+"9I", f.read(36))
+                        more_primitives = []
+                        for k in range(submesh_info["primitive_count"]):
+                            primitive = {}
+                            primitive["indexBufferPrimType"], primitive["vertexBufferOffset"], primitive["vertexCount"],\
+                            primitive["indexBufferOffset"], primitive["indexCount"] = struct.unpack(e+"5I", f.read(20))
+                            if k == 0:
+                                submesh_info.update(primitive)
+                            else:
+                                more_primitives.append(primitive)
+                        if len(more_primitives) > 0:
+                            print("Warning! Submesh with multiple primitives encountered!")
+                            print("This is not fully supported.  Please report for more testing.")
+                            submesh_info["more_primitives"] = more_primitives
                         submesh_blocks.append(submesh_info)
                     section['data'] = submesh_blocks
                 case 0x00010009:
@@ -818,13 +826,9 @@ def parseG1MG(g1mg_chunk,e):
                     for j in range(section['count']):
                         lod_block = {'block_id_referenceonly': j}
                         lod_block["LOD"], = struct.unpack(e+"I", f.read(4))
-                        if g1mg_section["version"] > 0x30303330:
-                            lod_block["Group"], lod_block["GroupEntryIndex"] = struct.unpack(e+"2I", f.read(8))
-                        else:
-                            lod_block["Group"] = 0
-                            lod_block["GroupEntryIndex"] = 0
+                        lod_block["Group"], lod_block["GroupEntryIndex"] = struct.unpack(e+"2I", f.read(8))
                         lod_block["submeshCount1"], lod_block["submeshCount2"] = struct.unpack(e+"2I", f.read(8))
-                        if g1mg_section["version"] > 0x30303340:
+                        if g1mg_section["version"] >= 0x30303432:
                             lod_block["lodRangeStart"], lod_block["lodRangeLength"], \
                             lod_block["unknown1"], lod_block["unknown2"] = struct.unpack(e+"4I", f.read(16))
                         else:
@@ -835,12 +839,11 @@ def parseG1MG(g1mg_chunk,e):
                             lod = {'id_referenceonly': k}
                             lod["name"] = f.read(16).replace(b'\x00',b'').decode("ASCII")
                             # In Project G1M, clothID is meshType, and NUNID is externalID
-                            lod["clothID"], lod["unknown"], lod["NUNID"], lod["indexCount"] = struct.unpack(e+"2H2I", f.read(12))
+                            lod["clothID"], lod["unknown"], lod["NUNID"], lod["indexCount"] = struct.unpack(e+"3H2xI", f.read(12))
                             if (lod["indexCount"] > 0):
                                 lod["indices"] = struct.unpack(e+"{0}I".format(lod["indexCount"]), f.read(4*lod["indexCount"]))
                             else:
                                 lod["indices"] = []
-                                f.seek(4,1)
                             lods.append(lod)
                         lod_block["lod"] = lods
                         lod_blocks.append(lod_block)
