@@ -203,10 +203,6 @@ def generate_materials(gltf_data, model_mesh_metadata, metadata_sections):
                     'metallicFactor' : 0.0, 'roughnessFactor' : 1.0 }
             elif materials[i]['textures'][j]['type'] == 3:
                 material['normalTexture'] =  { 'index' : len(gltf_data['textures']), 'texCoord': materials[i]['textures'][j]['layer'] }
-            elif materials[i]['textures'][j]['type'] == 5:
-                material['occlusionTexture'] =  { 'index' : len(gltf_data['textures']), 'texCoord': materials[i]['textures'][j]['layer'] }
-            elif materials[i]['textures'][j]['type'] == 2:
-                material['emissiveTexture'] =  { 'index' : len(gltf_data['textures']), 'texCoord': materials[i]['textures'][j]['layer'] }
             gltf_data['samplers'].append(sampler)
             gltf_data['textures'].append(texture)
         gltf_data['materials'].append(material)
