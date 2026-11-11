@@ -30,6 +30,9 @@ except ModuleNotFoundError as e:
 # This script transforms cloth meshes (aka 4D meshes) by default, change the following line to False to disable
 transform_cloth_mesh_default = True
 
+# For internal use only, end users should leave this set to False
+debug_mode = False
+
 # From GitHub/uyjulian's ED9 MDL parser, thank you
 def read_pascal_string(f):
     sz = int.from_bytes(f.read(1), byteorder="little")
@@ -243,9 +246,7 @@ def parseNUNO3(chunkVersion, f, e):
     skip3, = struct.unpack(e+"i", f.read(4))
     if chunkVersion < 0x30303330:
         skip4 = 0
-        f.read(0xAC)
-        #if chunkVersion >= 0x30303235:
-            #f.read(0x10)
+        f.read(0xBC)
     else:
         skip4, = struct.unpack(e+"i", f.read(4))
         f.read(0x8)
@@ -990,6 +991,8 @@ def balance_submesh_indices_and_weights (submesh):
     stride_key = 'vb0 stride' if 'vb0 stride' in submesh['fmt'] else 'stride'
     stride = int(submesh['fmt'][stride_key])
     num_verts = len(submesh['vb'][0]['Buffer'])
+    if num_verts == 0: # Modded file with deleted submesh, skip processing
+        return submesh
     if len(blend_indices_idx) > len(blend_weights_idx):
         new_weight_buffer = []
         for i in range(num_verts):
@@ -1299,6 +1302,8 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
             except:
                 cloth_render_fail = True
                 print("Rendering cloth mesh failed!  Cloth mesh rendering will be skipped.")
+                if debug_mode:
+                    raise
 
 # The argument passed (g1m_name) is actually the folder name
 def parseSkelG1M(g1m_name):
@@ -1431,6 +1436,8 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
                     nun_parse_fail = True
                     print("Parsing cloth mesh NUN data failed!  Cloth mesh rendering will be skipped.")
                     f.seek(chunk["start_offset"] + chunk["size"],0)
+                    if debug_mode:
+                        raise
             elif chunk["magic"] in ['G1MG', 'GM1G']:
                 f.seek(chunk["start_offset"],0)
                 g1mg_stream = f.read(chunk["size"])
@@ -1447,6 +1454,8 @@ def parseG1M(g1m_name, overwrite = False, write_buffers = True, cull_vertices = 
                     nun_maps['nun_data'] = nun_data
             except:
                 print("Compiling cloth mesh NUN data failed!  Cloth mesh rendering will be skipped.")
+                if debug_mode:
+                    raise
         if os.path.exists(g1m_name) and (os.path.isdir(g1m_name)) and (overwrite == False):
             if str(input(g1m_name + " folder exists! Overwrite? (y/N) ")).lower()[0:1] == 'y':
                 overwrite = True
