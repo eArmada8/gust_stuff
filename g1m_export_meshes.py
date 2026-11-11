@@ -839,7 +839,7 @@ def parseG1MG(g1mg_chunk,e):
                             lod = {'id_referenceonly': k}
                             lod["name"] = f.read(16).replace(b'\x00',b'').decode("ASCII")
                             # In Project G1M, clothID is meshType, and NUNID is externalID
-                            lod["clothID"], lod["unknown"], lod["NUNID"], lod["indexCount"] = struct.unpack(e+"3H2xI", f.read(12))
+                            lod["clothID"], lod["unknown"], lod["NUNID"], lod["indexCount"] = struct.unpack(e+"2H2I", f.read(12))
                             if (lod["indexCount"] > 0):
                                 lod["indices"] = struct.unpack(e+"{0}I".format(lod["indexCount"]), f.read(4*lod["indexCount"]))
                             else:
@@ -982,15 +982,67 @@ def generate_vgmap(boneindex, model_mesh_metadata, skel_data):
         vgmap_json[skel_data['boneList'][bonepalettes['data'][boneindex]['joints'][i]['jointIndex']]['bone_id']] = i * 3
     return(vgmap_json)
 
+def balance_submesh_indices_and_weights (submesh):
+    blend_indices_idx = [i for i in range(len(submesh['fmt']['elements'])) if submesh['fmt']['elements'][i]['SemanticName'] == 'BLENDINDICES']
+    blend_weights_idx = [i for i in range(len(submesh['fmt']['elements'])) if submesh['fmt']['elements'][i]['SemanticName'] in ['BLENDWEIGHT', 'BLENDWEIGHTS']]
+    blidx_layers = dict(sorted({int(submesh['fmt']['elements'][i]['SemanticIndex']):i for i in blend_indices_idx}.items()))
+    bl_wt_layers = dict(sorted({int(submesh['fmt']['elements'][i]['SemanticIndex']):i for i in blend_weights_idx}.items()))
+    stride_key = 'vb0 stride' if 'vb0 stride' in submesh['fmt'] else 'stride'
+    stride = int(submesh['fmt'][stride_key])
+    num_verts = len(submesh['vb'][0]['Buffer'])
+    if len(blend_indices_idx) > len(blend_weights_idx):
+        new_weight_buffer = []
+        for i in range(num_verts):
+            total_wt = 0.0
+            for j in range(len(bl_wt_layers)):
+                total_wt += sum(submesh['vb'][bl_wt_layers[j]]['Buffer'][i])
+            new_weight_buffer.append([max(0.0,1.0-min(1.0, total_wt)), 0.0, 0.0, 0.0])
+        submesh['vb'].append({'Buffer': new_weight_buffer})
+        submesh['fmt']['elements'].append({'id': str(len(submesh['fmt']['elements'])),
+            'SemanticName': 'BLENDWEIGHT',
+            'SemanticIndex': str(len(bl_wt_layers)),
+            'Format': 'R32G32B32A32_FLOAT',
+            'InputSlot': '0',
+            'AlignedByteOffset': str(stride),
+            'InputSlotClass': 'per-vertex',
+            'InstanceDataStepRate': '0'})
+        submesh['fmt'][stride_key] = str(stride + 16)
+    else:
+        if (len(blidx_layers) > 0 and 
+                len(submesh['vb'][blidx_layers[max(blidx_layers)]]['Buffer'][0]) ==
+                len(submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][0]) + 1):
+            submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'] = \
+                [x + [0.0] for x in submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer']]
+            for i in range(num_verts):
+                total_wt = 0.0
+                for j in range(len(bl_wt_layers)):
+                    total_wt += sum(submesh['vb'][bl_wt_layers[j]]['Buffer'][i])
+                missing_wt = max(0.0,1.0-min(1.0, total_wt))
+                if missing_wt > 1e-5 and submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][i][-1] == 0.0:
+                    first_empty = submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][i].index(0.0)
+                    submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][i][first_empty] = missing_wt
+            i = bl_wt_layers[max(bl_wt_layers)]
+            stride = int(submesh['fmt']['elements'][i]['AlignedByteOffset'])
+            submesh['fmt']['elements'][i]['Format'] = {1: 'R32_FLOAT', 2: 'R32G32_FLOAT', 3: 'R32G32B32_FLOAT',
+                4: 'R32G32B32A32_FLOAT'}[len(submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][0])]
+            stride += get_stride_from_dxgi_format(submesh['fmt']['elements'][i]['Format'])
+            i += 1
+            while i < len(submesh['fmt']['elements']):
+                submesh['fmt']['elements'][i]['AlignedByteOffset'] = str(stride)
+                stride += get_stride_from_dxgi_format(submesh['fmt']['elements'][i]['Format'])
+                i += 1
+            submesh['fmt'][stride_key] = str(stride)
+    return submesh
+
 def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts, e = '<', cull_vertices = True,\
-        preserve_trianglestrip = False):
+        preserve_trianglestrip = False, balance_submeshes = True):
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
     ibindex = subvbs['data'][subindex]['indexBufferIndex']
     vbindex = subvbs['data'][subindex]['vertexBufferIndex']
     boneindex = subvbs['data'][subindex]['bonePaletteIndex']
     submesh = {}
     submesh["fmt"] = fmts[vbindex]
-    ib_data = generate_ib(ibindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')
+    ib_data = generate_ib(ibindex, g1mg_stream, model_mesh_metadata, fmts, e = e)
     # Flatten from 2D to 1D before sectioning.
     submesh["ib"] = [x for y in ib_data for x in y][int(subvbs['data'][subindex]['indexBufferOffset']):\
         int(subvbs['data'][subindex]['indexBufferOffset']+subvbs['data'][subindex]['indexCount'])]
@@ -999,9 +1051,11 @@ def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts
         submesh["fmt"]["topology"] = "trianglelist"
     else:
         submesh["ib"] = [[x] for x in submesh["ib"]] # Turn back into 2D list so cull_vertices() works
-    submesh["vb"] = generate_vb(vbindex, g1mg_stream, model_mesh_metadata, fmts, e = '<')
+    submesh["vb"] = generate_vb(vbindex, g1mg_stream, model_mesh_metadata, fmts, e = e)
     if cull_vertices == True: # Call with False to produce submeshes identical to G1M Tools
         submesh = cull_vb(submesh)
+    if balance_submeshes == True:
+        submesh = balance_submesh_indices_and_weights(submesh)
     # Trying to detect if the external skeleton is missing
     if skel_data['jointCount'] > 1 and not skel_data['boneList'][0]['parentID'] < -200000000:
         submesh["vgmap"] = generate_vgmap(boneindex, model_mesh_metadata, skel_data)
@@ -1040,9 +1094,9 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
     for i in range(len(position_data)):
         if binormalBuffer[i] == [0,0,0,0]:
             vertPosBuff.append((Quaternion(clothParentBone['abs_q']).rotate(position_data[i][0:3]) + numpy.array(clothParentBone['abs_p'])).tolist())
-            vertNormBuff.append(normal_data[i])
+            vertNormBuff.append(list(Quaternion(clothParentBone['abs_q']).rotate(normal_data[i][0:3])))
             if tangent_data:
-                tangentBuffer.append(tangent_data[i])
+                tangentBuffer.append(list(Quaternion(clothParentBone['abs_q']).rotate(tangent_data[i][0:3])) + [tangent_data[i][3]])
         else:
             clothPosition = position_data[i]
             position = [0,0,0]
@@ -1129,6 +1183,8 @@ def render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_da
         == "JOINT_PALETTES"][0]["data"]][submeshinfo['bonePaletteIndex']]
     physicsBoneList = [x["physicsIndex"] & 0xFFFF for x in palette]
     position_data = [x for x in submesh['vb'] if x['SemanticName'] == 'POSITION'][0]['Buffer']
+    normal_data = [x for x in new_vb if x['SemanticName'] == 'NORMAL'][0]['Buffer']
+    tangent_data = [x for x in new_vb if x['SemanticName'] == 'TANGENT'][0]['Buffer']
     if 'BLENDINDICES' in [x['SemanticName'] for x in submesh['vb']]:
         oldSkinIndiceList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDINDICES'][0]['Buffer']
     else:
@@ -1136,16 +1192,24 @@ def render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_da
     vertPosBuff = []
     jointIndexBuff = []
     for i in range(len(position_data)):
+        rotation = False
         if oldSkinIndiceList[i][0] // 3 < len(physicsBoneList):
             index = physicsBoneList[oldSkinIndiceList[i][0] // 3]
             if index < len(model_skel_data["boneList"]):
                 quat1 = Quaternion(model_skel_data["boneList"][index]["abs_q"])
+                rotation = quat1.unit.conjugate
                 quat2 = Quaternion([quat1[0], 0-quat1[1], 0-quat1[2], 0-quat1[3]]) \
                     * Quaternion(0, position_data[i][0], position_data[i][1], position_data[i][2]) \
                     * quat1
                 vertPosBuff.append((numpy.array(model_skel_data["boneList"][index]["abs_p"]) \
                     + numpy.array([quat2[1], quat2[2], quat2[3]])).tolist())
+                normal_data[i] = list(rotation.rotate(normal_data[i][0:3])) + list(normal_data[i][3:])
+                tangent_data[i] = list(rotation.rotate(tangent_data[i][0:3])) + list(tangent_data[i][3:])
+        if rotation == False:
+            vertPosBuff.append(position_data[i])
     original_pos_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'POSITION'][0]['id'])
+    original_nml_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'NORMAL'][0]['id'])
+    original_tan_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'TANGENT'][0]['id'])
     new_pos_fmt = len(new_fmt['elements'])
     new_fmt['elements'].append(copy.deepcopy(new_fmt['elements'][original_pos_fmt]))
     new_fmt['elements'][original_pos_fmt]['SemanticName'] = '4D_POSITION'

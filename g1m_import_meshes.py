@@ -166,6 +166,7 @@ def parseG1MforG1MG(g1m_name):
 
 def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_data, e = '<'):
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
+    vb_attr = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_ATTRIBUTES"][0]
     lod_data = [x for x in model_mesh_metadata["sections"] if x['type'] == 'MESH_LOD'][0]
     lod_blocks_combined = [x for y in lod_data['data'] for x in y['lod']]
     mesh_with_subs = find_submeshes(model_mesh_metadata) #dict with key as mesh, value as submesh
@@ -185,6 +186,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
         os.path.exists('{0}/{1}.vb'.format(g1m_name, x)))]
     composite_vbs = []
     current_vbsub = 0
+    extra_blendweight_detected = False
     for i in mesh_with_subs:
         # When processing each mesh, cull the submesh list of submeshes that have been deleted
         existing_submeshes = [x for x in mesh_with_subs[i] if str(x) in meshfiles]
@@ -200,7 +202,8 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                     fmt = read_fmt("{0}/{1}.fmt".format(g1m_name, existing_submeshes[j]))
                     vb = read_vb("{0}/{1}.vb".format(g1m_name, existing_submeshes[j]), fmt)
                     ib = read_ib("{0}/{1}.ib".format(g1m_name, existing_submeshes[j]), fmt)
-                    stride = fmt['vb0 stride'] if 'vb0 stride' in fmt else fmt['stride']
+                    stride_name = 'vb0 stride' if 'vb0 stride' in fmt else 'stride'
+                    stride = fmt[stride_name]
                     # Do not process submesh if it does not match the existing format (set by the first submesh)
                     compatible_fmt = False
                     if stride == mesh_stride and fmt['elements'] == mesh_fmt['elements']:
@@ -219,7 +222,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                                 if current_wt_len > correct_wt_len:
                                     current_wt_index = mesh_fmt_contents.index('BLENDWEIGHT_{}'.format(k)) # The buffer has already been re-ordered
                                     vb[current_wt_index]['Buffer'] = [x[:correct_wt_len] for x in vb[current_wt_index]['Buffer']]
-                            fmt = mesh_fmt
+                            fmt = copy.deepcopy(mesh_fmt)
                             compatible_fmt = True
                     if compatible_fmt == True:
                         # Vertex group sanity check, if vgmap available
@@ -290,6 +293,57 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                             fmt["topology"] = "trianglestrip"
                         ib = [x for y in ib for x in y]
                         indexBufferOffset = len(composite_ib)
+                        expected_vbattr = vb_attr['data'][i]['attributes_list']
+                        blend_weights_idx = [k for k in range(len(fmt['elements']))
+                            if fmt['elements'][k]['SemanticName'] in ['BLENDWEIGHT', 'BLENDWEIGHTS']]
+                        bl_wt_layers = dict(sorted({int(fmt['elements'][k]['SemanticIndex']):k for k in blend_weights_idx}.items()))
+                        max_wt_layer = bl_wt_layers[max(bl_wt_layers)] if len(bl_wt_layers) > 0 else None
+                        if len(vb) > len(expected_vbattr): # Extra BLENDWEIGHT inserted by export script for final weight
+                            if ((len(vb) == len(expected_vbattr) + 1)
+                                    and (fmt['elements'][-1]['SemanticName'] in ['BLENDWEIGHT', 'BLENDWEIGHTS'])):
+                                if extra_blendweight_detected == False:
+                                    max_weights = len([k for k in range(len(fmt['elements']))
+                                        if fmt['elements'][k]['SemanticName'] == 'BLENDINDICES']) * 4 - 3
+                                    extra_blendweight_detected = True
+                                    print("Extra BLENDWEIGHTs detected, will drop.  Be sure meshes use a max of {} vertex groups.".format(max_weights))
+                                    print("This is expected for certain games e.g. Atelier Yumia.")
+                                # Normalize weights before removing final BLENDWEIGHT
+                                for k in range(len(vb[0]['Buffer'])):
+                                    total_wt = 0.0
+                                    for l in bl_wt_layers:
+                                        total_wt += sum(vb[bl_wt_layers[l]]['Buffer'][k])
+                                    if abs(1 - total_wt) > 1e-5 and total_wt > 1e-5:
+                                        for l in bl_wt_layers:
+                                            vb[bl_wt_layers[l]]['Buffer'][k] = [(x / total_wt) for x in vb[bl_wt_layers[l]]['Buffer'][k]]
+                                stride = fmt[stride_name] = str(int(stride)
+                                    - get_stride_from_dxgi_format(fmt['elements'][-1]['Format']))
+                                fmt['elements'].pop()
+                                vb.pop()
+                            else:
+                                print("Warning: Too many vertex primitive attributes!  The FMT has changed, the game may crash.")
+                        elif (max_wt_layer != None and (fmt['elements'][max_wt_layer]['SemanticName']
+                            == expected_vbattr[max_wt_layer]['semantic'])
+                            and (get_stride_from_dxgi_format(fmt['elements'][max_wt_layer]['Format'])
+                            == get_stride_from_dxgi_format(expected_vbattr[max_wt_layer]['dataType']) + 4)):
+                            # Normalize weights before removing final BLENDWEIGHT
+                            for k in range(len(vb[0]['Buffer'])):
+                                total_wt = 0.0
+                                for l in bl_wt_layers:
+                                    total_wt += sum(vb[bl_wt_layers[l]]['Buffer'][k])
+                                if abs(1 - total_wt) > 1e-5 and (total_wt > 1e-5): # The latter to avoid ZeroDivisionError
+                                    for l in bl_wt_layers:
+                                        vb[bl_wt_layers[l]]['Buffer'][k] = [(x / total_wt) for x in vb[bl_wt_layers[l]]['Buffer'][k]]
+                            vb[max_wt_layer]['Buffer'] = [x[:-1] for x in vb[max_wt_layer]['Buffer']]
+                            k = max_wt_layer
+                            stride = int(fmt['elements'][k]['AlignedByteOffset'])
+                            fmt['elements'][k]['Format'] = expected_vbattr[k]['dataType']
+                            stride += get_stride_from_dxgi_format(fmt['elements'][k]['Format'])
+                            k += 1
+                            while k < len(fmt['elements']):
+                                fmt['elements'][k]['AlignedByteOffset'] = str(stride)
+                                stride += get_stride_from_dxgi_format(fmt['elements'][k]['Format'])
+                                k += 1
+                            stride = fmt[stride_name] = str(stride)
                         if len(composite_vb) == 0:
                             composite_vb = vb
                             composite_ib = ib
@@ -478,6 +532,7 @@ def build_g1mg(g1m_name, skel_data, e = '<'):
                     dataType_list = {'R32_FLOAT': 0x00, 'R32G32_FLOAT': 0x01, 'R32G32B32_FLOAT': 0x02, 'R32G32B32A32_FLOAT': 0x03,\
                     'R8G8B8A8_UINT': 0x05, 'R16G16B16A16_UINT': 0x07, 'R32G32B32A32_UINT': 0x09, 'R16G16_FLOAT': 0x0A,\
                     'R16G16B16A16_FLOAT': 0x0B, 'R8G8B8A8_UNORM': 0x0D,  'UNKNOWN': 0xFF}
+                    extra_blendweight_detected = False
                     for j in range(len(composite_vbs)):
                         vbattr_section += struct.pack(e+"2I", 1, j)
                         vbattr_section += struct.pack(e+"I", len(composite_vbs[j]['fmt']['elements']))
@@ -562,7 +617,7 @@ def build_g1mg(g1m_name, skel_data, e = '<'):
                             while len(name) < 16:
                                 name += b'\x00'
                             lod_block += name
-                            lod_block += struct.pack(e+"3H2xI",\
+                            lod_block += struct.pack(e+"2H2I",\
                                 model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['clothID'],\
                                 model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['unknown'],\
                                 model_mesh_metadata['sections'][i]['data'][j]['lod'][k]['NUNID'],\
