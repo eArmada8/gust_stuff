@@ -38,6 +38,8 @@ Cloth meshes utilizing NUNO1, NUNO3, NUNO5, NUNV1 and NUNS1 will be transformed 
 
 Additionally, it will output a JSON file with metadata from the geometry (G1MG) section, that will be sourced during repacking.
 
+*NOTE:* Newer games (e.g. Atelier Yumia) will save space by having shorter blend weight semantics than blend indices.  The exporter script automatically expands the weights, and the importer script will shrink them again.  When modding, do not use more than the allowed number of weights (taken from the metadata).  For example, if the original mesh used 5 weights per vertex, do not go beyond this limit when modding.  (This may be changeable in the metadata, but I have not experimented with this.)
+
 **Command line arguments:**
 `g1m_export_meshes.py [-h] [-o] [-n] [-f] [-s] g1m_filename`
 
@@ -75,6 +77,8 @@ Certain games (e.g. Atelier Sophie) use triangle strips instead of triangle list
 
 *NOTE:* Newer versions of the Blender plugin export .vb0 files instead of .vb files.  Do not attempt to rename .vb0 files to .vb files, just leave them as-is and the scripts will look for the correct file.
 
+*NOTE:* See note above about vertex weight group limits.
+
 **Command line arguments:**
 `g1m_import_meshes.py [-h] mdl_filename`
 
@@ -100,9 +104,11 @@ Shows help message.
 Overwrite existing files without prompting.
 
 ### yumia_g1m_remove_excess_blendindices.py
-Some games, such as Atelier Yumia, have meshes with more BLENDINDICES than BLENDWEIGHT semantics for unknown reasons.  Double click the python script and it will search the current folder for all .g1m files with exported folders, and alter all the .fmt files to hide the excess BLENDINDICES semantics from Blender.  When the extra semantics are hidden, the meshes cannot be imported back to G1M - use yumia_g1m_restore_original_fmts.py to restore the original .fmt files.
+Some games, such as Atelier Yumia, have meshes with more BLENDINDICES than BLENDWEIGHT semantics.  Double click the python script and it will search the current folder for all .g1m files with exported folders, and alter all the .fmt files to hide the excess BLENDINDICES semantics from Blender.  When the extra semantics are hidden, the meshes cannot be imported back to G1M - use yumia_g1m_restore_original_fmts.py to restore the original .fmt files.
 
 Note that this script will make a backup of the original fmts, then overwrite the originals.  Do NOT delete the backups, or yumia_g1m_restore_original_fmts.py cannot restore them.
+
+*Note:* This script is no longer needed as of v1.3.20, and is included only for working with older mod folders.
 
 **Command line arguments:**
 `yumia_g1m_remove_excess_blendindices.py [-h] mesh_folder`
@@ -120,3 +126,5 @@ If you have delete the backups, yumia_g1m_restore_original_fmts.py cannot restor
 
 `-h, --help`
 Shows help message.
+
+*Note:* This script is no longer needed as of v1.3.20, and is included only for working with older mod folders.
