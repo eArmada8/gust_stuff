@@ -997,7 +997,8 @@ def balance_submesh_indices_and_weights (submesh):
             for j in range(len(bl_wt_layers)):
                 total_wt += sum(submesh['vb'][bl_wt_layers[j]]['Buffer'][i])
             new_weight_buffer.append([max(0.0,1.0-min(1.0, total_wt)), 0.0, 0.0, 0.0])
-        submesh['vb'].append({'Buffer': new_weight_buffer})
+        submesh['vb'].append({'SemanticName': 'BLENDWEIGHT',
+            'SemanticIndex': str(len(bl_wt_layers)), 'Buffer': new_weight_buffer})
         submesh['fmt']['elements'].append({'id': str(len(submesh['fmt']['elements'])),
             'SemanticName': 'BLENDWEIGHT',
             'SemanticIndex': str(len(bl_wt_layers)),
@@ -1009,17 +1010,19 @@ def balance_submesh_indices_and_weights (submesh):
         submesh['fmt'][stride_key] = str(stride + 16)
     else:
         if (len(blidx_layers) > 0 and 
-                len(submesh['vb'][blidx_layers[max(blidx_layers)]]['Buffer'][0]) ==
-                len(submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][0]) + 1):
-            submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'] = \
-                [x + [0.0] for x in submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer']]
+                len(submesh['vb'][blidx_layers[max(blidx_layers)]]['Buffer'][0]) >
+                len(submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][0])):
+            first_empty = len(submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][0])
+            while (len(submesh['vb'][blidx_layers[max(blidx_layers)]]['Buffer'][0]) >
+                    len(submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][0])):
+                submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'] = \
+                    [x + [0.0] for x in submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer']]
             for i in range(num_verts):
                 total_wt = 0.0
                 for j in range(len(bl_wt_layers)):
                     total_wt += sum(submesh['vb'][bl_wt_layers[j]]['Buffer'][i])
                 missing_wt = max(0.0,1.0-min(1.0, total_wt))
                 if missing_wt > 1e-5 and submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][i][-1] == 0.0:
-                    first_empty = submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][i].index(0.0)
                     submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][i][first_empty] = missing_wt
             i = bl_wt_layers[max(bl_wt_layers)]
             stride = int(submesh['fmt']['elements'][i]['AlignedByteOffset'])
@@ -1178,13 +1181,17 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
 def render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_data, remove_physics = False):
     new_fmt = copy.deepcopy(submesh['fmt'])
     new_vb = copy.deepcopy(submesh['vb'])
+    all_attr = [x['SemanticName'] for x in submesh['vb']]
+    has_normal, has_tangent = 'NORMAL' in all_attr, 'TANGENT' in all_attr
     submeshinfo = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]["data"][subindex]
     palette = [x["joints"] for x in [x for x in model_mesh_metadata['sections'] if x['type']\
         == "JOINT_PALETTES"][0]["data"]][submeshinfo['bonePaletteIndex']]
     physicsBoneList = [x["physicsIndex"] & 0xFFFF for x in palette]
     position_data = [x for x in submesh['vb'] if x['SemanticName'] == 'POSITION'][0]['Buffer']
-    normal_data = [x for x in new_vb if x['SemanticName'] == 'NORMAL'][0]['Buffer']
-    tangent_data = [x for x in new_vb if x['SemanticName'] == 'TANGENT'][0]['Buffer']
+    if has_normal:
+        normal_data = [x for x in new_vb if x['SemanticName'] == 'NORMAL'][0]['Buffer']
+    if has_tangent:
+        tangent_data = [x for x in new_vb if x['SemanticName'] == 'TANGENT'][0]['Buffer']
     if 'BLENDINDICES' in [x['SemanticName'] for x in submesh['vb']]:
         oldSkinIndiceList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDINDICES'][0]['Buffer']
     else:
@@ -1203,13 +1210,13 @@ def render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_da
                     * quat1
                 vertPosBuff.append((numpy.array(model_skel_data["boneList"][index]["abs_p"]) \
                     + numpy.array([quat2[1], quat2[2], quat2[3]])).tolist())
-                normal_data[i] = list(rotation.rotate(normal_data[i][0:3])) + list(normal_data[i][3:])
-                tangent_data[i] = list(rotation.rotate(tangent_data[i][0:3])) + list(tangent_data[i][3:])
+                if has_normal:
+                    normal_data[i] = list(rotation.rotate(normal_data[i][0:3])) + list(normal_data[i][3:])
+                if has_tangent:
+                    tangent_data[i] = list(rotation.rotate(tangent_data[i][0:3])) + list(tangent_data[i][3:])
         if rotation == False:
             vertPosBuff.append(position_data[i])
     original_pos_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'POSITION'][0]['id'])
-    original_nml_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'NORMAL'][0]['id'])
-    original_tan_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'TANGENT'][0]['id'])
     new_pos_fmt = len(new_fmt['elements'])
     new_fmt['elements'].append(copy.deepcopy(new_fmt['elements'][original_pos_fmt]))
     new_fmt['elements'][original_pos_fmt]['SemanticName'] = '4D_POSITION'

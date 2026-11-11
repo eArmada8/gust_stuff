@@ -323,8 +323,8 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                                 print("Warning: Too many vertex primitive attributes!  The FMT has changed, the game may crash.")
                         elif (max_wt_layer != None and (fmt['elements'][max_wt_layer]['SemanticName']
                             == expected_vbattr[max_wt_layer]['semantic'])
-                            and (get_stride_from_dxgi_format(fmt['elements'][max_wt_layer]['Format'])
-                            == get_stride_from_dxgi_format(expected_vbattr[max_wt_layer]['dataType']) + 4)):
+                            and (get_stride_from_dxgi_format(fmt['elements'][max_wt_layer]['Format']) >
+                            get_stride_from_dxgi_format(expected_vbattr[max_wt_layer]['dataType']))):
                             # Normalize weights before removing final BLENDWEIGHT
                             for k in range(len(vb[0]['Buffer'])):
                                 total_wt = 0.0
@@ -333,7 +333,9 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                                 if abs(1 - total_wt) > 1e-5 and (total_wt > 1e-5): # The latter to avoid ZeroDivisionError
                                     for l in bl_wt_layers:
                                         vb[bl_wt_layers[l]]['Buffer'][k] = [(x / total_wt) for x in vb[bl_wt_layers[l]]['Buffer'][k]]
-                            vb[max_wt_layer]['Buffer'] = [x[:-1] for x in vb[max_wt_layer]['Buffer']]
+                            correct_vec_len = len(re.findall("[0-9]+",expected_vbattr[max_wt_layer]['dataType'].split('_')[0]))
+                            while len(vb[max_wt_layer]['Buffer'][0]) > correct_vec_len:
+                                vb[max_wt_layer]['Buffer'] = [x[:-1] for x in vb[max_wt_layer]['Buffer']]
                             k = max_wt_layer
                             stride = int(fmt['elements'][k]['AlignedByteOffset'])
                             fmt['elements'][k]['Format'] = expected_vbattr[k]['dataType']

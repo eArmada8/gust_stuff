@@ -367,9 +367,9 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
                     primitive["mode"] = 0 #POINTS
                 if subvbs['data'][subindex]['materialIndex'] < len(gltf_data['materials']):
                     primitive["material"] = subvbs['data'][subindex]['materialIndex']
-                    if not keep_color:
-                        # Remove vertex colors, as g1m does not actually use this semantic for vertex colors (it is for cloth transform)
-                        primitive["attributes"] = {k:v for (k,v) in primitive["attributes"].items() if not 'COLOR' in k}
+                if not keep_color:
+                    # Remove vertex colors, as g1m does not actually use this semantic for vertex colors (it is for cloth transform)
+                    primitive["attributes"] = {k:v for (k,v) in primitive["attributes"].items() if not 'COLOR' in k}
                 mesh_nodes.append(len(gltf_data['nodes']))
                 gltf_data['nodes'].append({'mesh': len(gltf_data['meshes']), 'name': "Mesh_{0}".format(subindex)})
                 gltf_data['meshes'].append({"primitives": [primitive], "name": "Mesh_{0}".format(subindex)})
@@ -393,6 +393,12 @@ def write_glTF(g1m_name, g1mg_stream, model_mesh_metadata, model_skel_data, nun_
                         "byteLength": len(inv_mtx_buffer)})
                     buffer_view += 1
                     giant_buffer += inv_mtx_buffer
+                else:
+                    # glTF does not allow JOINTS and WEIGHTS if the mesh is not skinned
+                    to_remove = [x for x in gltf_data['meshes'][-1]['primitives'][0]['attributes']
+                        if x[:6] in ['JOINTS','WEIGHT']]
+                    for r in to_remove:
+                        gltf_data['meshes'][-1]['primitives'][0]['attributes'].pop(r)
                 del(submesh)
     gltf_data['scenes'][0]['nodes'].extend(mesh_nodes)
     gltf_data['buffers'].append({"byteLength": len(giant_buffer), "uri": g1m_name+'.bin'})
