@@ -92,8 +92,6 @@ It will search the current folder for elixir.json (from Gust Tools) and export t
 
 Cloth meshes are all transformed; there is currently no "skip transformation" option since 4D meshes cannot be incorporated into glTF.
 
-*Note:* Some games, like Atelier Yumia, have models with very strange normals.  If the model normals look very bad when imported into Blender, try importing with "Smooth Shading" instead of "Use Normal Data."
-
 **Command line arguments:**
 `g1m_to_basic_gltf.py [-h] [-o] g1m_filename`
 
