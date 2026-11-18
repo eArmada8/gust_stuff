@@ -195,6 +195,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                 mesh_fmt = read_fmt("{0}/{1}.fmt".format(g1m_name, existing_submeshes[0]))
                 mesh_stride = mesh_fmt['vb0 stride'] if 'vb0 stride' in mesh_fmt else mesh_fmt['stride']
                 composite_vb = []
+                composite_t_vb = []
                 composite_ib = []
                 vbsub_info = {}
                 for j in range(len(existing_submeshes)):
@@ -202,6 +203,14 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                     fmt = read_fmt("{0}/{1}.fmt".format(g1m_name, existing_submeshes[j]))
                     vb = read_vb("{0}/{1}.vb".format(g1m_name, existing_submeshes[j]), fmt)
                     ib = read_ib("{0}/{1}.ib".format(g1m_name, existing_submeshes[j]), fmt)
+                    # If transformed buffer exists, we will use this for the bounding box.
+                    t_pos_buffer = []
+                    if (os.path.exists("{0}/{1}_transformed.fmt".format(g1m_name, existing_submeshes[j]))
+                        and os.path.exists("{0}/{1}_transformed.vb".format(g1m_name, existing_submeshes[j]))):
+                        t_fmt = read_fmt("{0}/{1}_transformed.fmt".format(g1m_name, existing_submeshes[j]))
+                        t_vb = read_vb("{0}/{1}_transformed.vb".format(g1m_name, existing_submeshes[j]), t_fmt)
+                        t_pos_i = [x['SemanticName'] for x in t_fmt['elements']].index('POSITION')
+                        t_pos_buffer = t_vb[t_pos_i]['Buffer']
                     stride_name = 'vb0 stride' if 'vb0 stride' in fmt else 'stride'
                     stride = fmt[stride_name]
                     # Do not process submesh if it does not match the existing format (set by the first submesh)
@@ -357,6 +366,7 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                             for k in range(len(ib)):
                                 ib[k] += ib_offset
                             composite_ib.extend(ib)
+                        composite_t_vb.append(t_pos_buffer)
                         # Determine indexBufferPrimType, which is set in submesh section instead of vertex attribute section
                         if fmt["topology"] == "trianglelist":
                             indexBufferPrimType = 3
@@ -393,8 +403,9 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                 # Cannot seem to delete entire meshes, so will generate a dummy mesh if all submeshes have been deleted
                 original_fmts = generate_fmts(model_mesh_metadata) # A little inefficient to run JIT but very helpful with error checking
                 fmt = original_fmts[i]
-                composite_ib = [x for y in generate_ib(i, g1mg_stream, model_mesh_metadata, original_fmts, e=e) for x in y]
+                composite_ib = [0,0,0]
                 composite_vb = generate_vb(i, g1mg_stream, model_mesh_metadata, original_fmts, e=e)
+                composite_t_vb = [[]]
                 # Place an empty submesh in the mesh
                 vbsub_info = {mesh_with_subs[i][0]: {"submeshFlags": subvbs['data'][mesh_with_subs[i][0]]['submeshFlags'],\
                             "vertexBufferIndex": i,\
@@ -415,25 +426,33 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                     i, mesh_with_subs[i][0]))
                 input("Press Enter to abort.")
                 raise
-        composite_vbs.append({'original_vb_num': i, 'fmt': fmt, 'vb': composite_vb, 'ib': composite_ib, 'vbsub_info': vbsub_info})
+        composite_t_vb = [x for y in composite_t_vb for x in y] # This should always be a list of 1, and needs to be flattened
+        composite_vbs.append({'original_vb_num': i, 'fmt': fmt, 'vb': composite_vb, 'ib': composite_ib,
+            't_vb': composite_t_vb, 'vbsub_info': vbsub_info})
     return(composite_vbs)
 
-# This will not be accurate until 4D is implemented
 def define_bounding_box(composite_vbs):
-    # Initialize bounding box - I have no idea why this works, but it does.
-    box = {'min_x': True, 'min_y': True, 'min_z': True, 'max_x': False, 'max_y': False, 'max_z': False}
-    # Check every position coordinate and spread out
+    # Initialize bounding box
+    box = {'min_x': float('inf'), 'min_y': float('inf'), 'min_z': float('inf'), 'max_x': float('-inf'), 'max_y': float('-inf'), 'max_z': float('-inf')}
+    infinite_box = True
+    # Check every position coordinate and shape the box
     for i in range(len(composite_vbs)):
-        element = int([x['id'] for x in composite_vbs[i]['fmt']['elements'] if x['SemanticName'] == 'POSITION'][0])
-        #if len(composite_vbs[i]['vb'][element]['Buffer']) > 0:
-        for j in range(len(composite_vbs[i]['vb'][element]['Buffer'])):
-            box['min_x'] = min(box['min_x'], composite_vbs[i]['vb'][element]['Buffer'][j][0])
-            box['min_y'] = min(box['min_y'], composite_vbs[i]['vb'][element]['Buffer'][j][1])
-            box['min_z'] = min(box['min_z'], composite_vbs[i]['vb'][element]['Buffer'][j][2])
-            box['max_x'] = max(box['max_x'], composite_vbs[i]['vb'][element]['Buffer'][j][0])
-            box['max_y'] = max(box['max_y'], composite_vbs[i]['vb'][element]['Buffer'][j][1])
-            box['max_z'] = max(box['max_z'], composite_vbs[i]['vb'][element]['Buffer'][j][2])
-    return(box)
+        if composite_vbs[i]['ib'] == [0,0,0]:
+            continue
+        if len(composite_vbs[i]['t_vb']) > 0:
+            pos_buffer = composite_vbs[i]['t_vb'] # Use transformed position buffer if available
+        else:
+            element = int([x['id'] for x in composite_vbs[i]['fmt']['elements'] if x['SemanticName'] == 'POSITION'][0])
+            pos_buffer = composite_vbs[i]['vb'][element]['Buffer']
+        for j in range(len(pos_buffer)):
+            box['min_x'] = min(box['min_x'], pos_buffer[j][0])
+            box['min_y'] = min(box['min_y'], pos_buffer[j][1])
+            box['min_z'] = min(box['min_z'], pos_buffer[j][2])
+            box['max_x'] = max(box['max_x'], pos_buffer[j][0])
+            box['max_y'] = max(box['max_y'], pos_buffer[j][1])
+            box['max_z'] = max(box['max_z'], pos_buffer[j][2])
+            infinite_box = False
+    return(box if infinite_box == False else {'min_x': 0.0, 'min_y': 0.0, 'min_z': 0.0, 'max_x': 0.0, 'max_y': 0.0, 'max_z': 0.0})
 
 def build_g1mg(g1m_name, skel_data, e = '<'):
     # Retrieve G1MG section from the current G1M file, as there will be sections we do not rebuild
