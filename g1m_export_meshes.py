@@ -19,7 +19,7 @@
 # GitHub eArmada8/gust_stuff
 
 try:
-    import glob, os, io, sys, struct, copy, json, numpy
+    import glob, os, io, sys, re, struct, copy, json, numpy
     from pyquaternion import Quaternion
     from lib_fmtibvb import *
 except ModuleNotFoundError as e:
@@ -295,7 +295,9 @@ def parseNUNO5(chunkVersion, f, e, entryIDtoNunoID):
         if bUseSkip10:
             current_offset = f.tell()
             skip10BlockSize, = struct.unpack(e+"I", f.read(4))
-            skip10Counts = struct.unpack(e+"5I", f.read(20))
+            # skip10Counts should be 5 counts, but the engine allows for a short binary block padded with zeroes
+            raw = f.read(min(max(skip10BlockSize - 4, 0), 20)).ljust(20, b'\x00')
+            skip10Counts = struct.unpack(e+"5I", raw)
             skip10Size = skip10Counts[0] * 8 + skip10Counts[3] * 4
             f.seek(current_offset + skip10BlockSize)
         current_offset = f.tell()
@@ -441,7 +443,7 @@ def parseNUNV(nuno_chunk, e):
             chunk["Type"],chunk["size"],chunk["subchunk_count"] = struct.unpack(e+"III", f.read(12))
             chunk["subchunks"] = []
             for j in range(chunk["subchunk_count"]):
-                if chunk["Type"] == 0x00050001:
+                if chunk["Type"] & 0xFFFF == 1:
                     chunk["subchunks"].append(parseNUNV1(nunv_section["version"],f,e))
                 else:
                     chunk["subchunks"].append({'Error': 'unsupported NUNV'})
@@ -461,7 +463,7 @@ def parseNUNS(nuno_chunk, e):
             chunk["Type"],chunk["size"],chunk["subchunk_count"] = struct.unpack(e+"III", f.read(12))
             chunk["subchunks"] = []
             for j in range(chunk["subchunk_count"]):
-                if chunk["Type"] == 0x00050001:
+                if chunk["Type"] & 0xFFFF == 1:
                     chunk["subchunks"].append(parseNUNS1(nuns_section["version"],f,e))
                 else:
                     chunk["subchunks"].append({'Error': 'unsupported NUNS'})
@@ -823,7 +825,7 @@ def parseG1MG(g1mg_chunk,e):
                     lod_blocks = []
                     for j in range(section['count']):
                         lod_block = {'block_id_referenceonly': j}
-                        lod_block["LOD"], = struct.unpack(e+"I", f.read(4))
+                        lod_block["LOD"], = struct.unpack(e+"I", f.read(4)) # Index into G1MS chunk table
                         lod_block["Group"], lod_block["GroupEntryIndex"] = struct.unpack(e+"2I", f.read(8))
                         lod_block["submeshCount1"], lod_block["submeshCount2"] = struct.unpack(e+"2I", f.read(8))
                         if g1mg_section["version"] >= 0x30303432:
@@ -1268,12 +1270,13 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
             try:
                 if submesh_lod['clothID'] == 1 and not nun_maps == False and transform_cloth == True:
                     print("Performing cloth mesh (4D) transformation...".format(subindex))
-                    if submesh_lod['NUNID'] >= 20000: # NUNO3 and NUNO5
-                        NUNID = submesh_lod['NUNID'] % 10000 + nuno35_offset
-                    elif (submesh_lod['NUNID']) >= 10000:
-                        NUNID = (submesh_lod['NUNID'] % 10000) + nunv_offset
+                    true_raw_nun_id = submesh_lod['NUNID'] & 0x7FFF # 0x8000 is a flag for external NUN data, not supported at this time
+                    if true_raw_nun_id >= 20000: # NUNO3 and NUNO5
+                        NUNID = true_raw_nun_id % 10000 + nuno35_offset
+                    elif (true_raw_nun_id) >= 10000:
+                        NUNID = (true_raw_nun_id % 10000) + nunv_offset
                     else:
-                        NUNID = submesh_lod['NUNID'] % 10000
+                        NUNID = true_raw_nun_id % 10000
                     transformed_submesh = render_cloth_submesh(submesh, NUNID, skel_data, nun_maps, e=e)
                     write_fmt(transformed_submesh['fmt'],'{0}{1}_transformed.fmt'.format(path, subindex))
                     if len(transformed_submesh['ib']) > 0 or write_empty_buffers == True:
