@@ -487,12 +487,8 @@ def make_drivermesh_fmt():
     {'id': '2', 'SemanticName': 'BLENDINDICES', 'SemanticIndex': '0', 'Format': 'R16G16B16A16_UINT',\
     'InputSlot': '0', 'AlignedByteOffset': '28', 'InputSlotClass': 'per-vertex', 'InstanceDataStepRate': '0'}]})
 
-def computeCenterOfMass(position, weights, bones, nunoMap, nun_transform_info):
-    temp = [0,0,0]
-    for bone_num in range(len(bones)):
-        bone = [x for x in nun_transform_info if x['bone_name'].split('_')[-1] == str(nunoMap[bones[bone_num]])][0]
-        temp += Quaternion(bone['abs_q']).rotate(position) + numpy.array(bone['abs_p']) * weights[bone_num]
-    return(temp)
+def computeCenterOfMass(weights, bones, nun_transform_info):
+    return(sum([numpy.array(nun_transform_info[bones[k]]['abs_p']) * weights[k] for k in range(len(bones))]))
 
 def calc_nun_maps(nun_data, skel_data):
     nunvOffset = 0
@@ -937,7 +933,7 @@ def generate_vb(index, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
     vb_attr = [x for x in model_mesh_metadata['sections'] if x['type'] == "VERTEX_ATTRIBUTES"][0]
     if index in range(len(fmts)):
         with io.BytesIO(g1mg_stream) as f:
-            if vb['data'][vb_attr['data'][index]['buffer_list'][0]]['count'] > 1:
+            if len(vb_attr['data'][index]['buffer_list']) > 1:
                 vb_stream = bytes()
                 for i in range(vb['data'][vb_attr['data'][index]['buffer_list'][0]]['count']):
                     for j in range(len(vb_attr['data'][index]['buffer_list'])):
@@ -957,7 +953,7 @@ def generate_vb(index, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
             return(vb_struct)
 
 def cull_vb(submesh):
-    active_indices = list({x for l in submesh['ib'] for x in l})
+    active_indices = {x for l in submesh['ib'] for x in l}
     new_vb = []
     for i in range(len(submesh['vb'])):
         new_vb.append({'SemanticName': submesh['vb'][i]['SemanticName'],\
@@ -1044,15 +1040,15 @@ def balance_submesh_indices_and_weights (submesh):
 def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts, e = '<', cull_vertices = True,\
         preserve_trianglestrip = False, balance_submeshes = True):
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
+    ibs = [x for x in model_mesh_metadata['sections'] if x['type'] == "INDEX_BUFFER"][0]
     ibindex = subvbs['data'][subindex]['indexBufferIndex']
     vbindex = subvbs['data'][subindex]['vertexBufferIndex']
     boneindex = subvbs['data'][subindex]['bonePaletteIndex']
     submesh = {}
     submesh["fmt"] = fmts[vbindex]
-    ib_data = generate_ib(ibindex, g1mg_stream, model_mesh_metadata, fmts, e = e)
-    # Flatten from 2D to 1D before sectioning.
-    submesh["ib"] = [x for y in ib_data for x in y][int(subvbs['data'][subindex]['indexBufferOffset']):\
-        int(subvbs['data'][subindex]['indexBufferOffset']+subvbs['data'][subindex]['indexCount'])]
+    ib_slice_offset = ibs['data'][ibindex]['offset'] + (subvbs['data'][subindex]['indexBufferOffset'] * ibs['data'][ibindex]['stride'])
+    submesh["ib"] = numpy.frombuffer(g1mg_stream, dtype = e+'u'+str(ibs['data'][ibindex]['stride']),
+        count = subvbs['data'][subindex]['indexCount'], offset = ib_slice_offset).tolist()
     if submesh["fmt"]["topology"] == "trianglestrip" and preserve_trianglestrip == False:
         submesh["ib"] = trianglestrip_to_list(submesh["ib"])
         submesh["fmt"]["topology"] = "trianglelist"
@@ -1080,7 +1076,7 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
     normal_data = [x for x in submesh['vb'] if x['SemanticName'] == 'NORMAL'][0]['Buffer']
     BlendIndicesList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDINDICES'][0]['Buffer']
     skinWeightList = [x for x in submesh['vb'] if x['SemanticName'] == 'BLENDWEIGHT'][0]['Buffer']
-    nunoMap = nun_maps['clothMap'][NUNID]
+    #nunoMap = nun_maps['clothMap'][NUNID]
     clothParentBone = [x for x in model_skel_data['boneList'] if x['i'] == nun_maps['clothParentIDMap'][NUNID]][0]
     clothStuff1Buffer = [x for x in submesh['vb'] if x['SemanticName'] == 'PSIZE'][0]['Buffer']
     clothStuff2Buffer = [x for x in submesh['vb'] if x['SemanticName'] == 'TEXCOORD' and int(x['SemanticIndex']) > 2][0]['Buffer'] #Not really sure about this one
@@ -1106,22 +1102,22 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
                 tangentBuffer.append(list(Quaternion(clothParentBone['abs_q']).rotate(tangent_data[i][0:3])) + [tangent_data[i][3]])
         else:
             clothPosition = position_data[i]
-            position = [0,0,0]
-            a = [0,0,0]
-            a += computeCenterOfMass(position, clothPosition, BlendIndicesList[i], nunoMap, nun_transform_info) * skinWeightList[i][0]
-            a += computeCenterOfMass(position, clothPosition, clothStuff1Buffer[i], nunoMap, nun_transform_info) * skinWeightList[i][1]
-            a += computeCenterOfMass(position, clothPosition, fogBuffer[i], nunoMap, nun_transform_info) * skinWeightList[i][2]
-            a += computeCenterOfMass(position, clothPosition, clothStuff2Buffer[i], nunoMap, nun_transform_info) * skinWeightList[i][3]
-            b = [0,0,0]
-            b += computeCenterOfMass(position, clothPosition, BlendIndicesList[i], nunoMap, nun_transform_info) * clothStuff5Buffer[i][0]
-            b += computeCenterOfMass(position, clothPosition, clothStuff1Buffer[i], nunoMap, nun_transform_info) * clothStuff5Buffer[i][1]
-            b += computeCenterOfMass(position, clothPosition, fogBuffer[i], nunoMap, nun_transform_info) * clothStuff5Buffer[i][2]
-            b += computeCenterOfMass(position, clothPosition, clothStuff2Buffer[i], nunoMap, nun_transform_info) * clothStuff5Buffer[i][3]
-            c = [0,0,0]
-            c += computeCenterOfMass(position, binormalBuffer[i], BlendIndicesList[i], nunoMap, nun_transform_info) * skinWeightList[i][0]
-            c += computeCenterOfMass(position, binormalBuffer[i], clothStuff1Buffer[i], nunoMap, nun_transform_info) * skinWeightList[i][1]
-            c += computeCenterOfMass(position, binormalBuffer[i], fogBuffer[i], nunoMap, nun_transform_info) * skinWeightList[i][2]
-            c += computeCenterOfMass(position, binormalBuffer[i], clothStuff2Buffer[i], nunoMap, nun_transform_info) * skinWeightList[i][3]
+            center_1 = [computeCenterOfMass(clothPosition, BlendIndicesList[i], nun_transform_info),
+                computeCenterOfMass(clothPosition, clothStuff1Buffer[i], nun_transform_info),
+                computeCenterOfMass(clothPosition, fogBuffer[i], nun_transform_info),
+                computeCenterOfMass(clothPosition, clothStuff2Buffer[i], nun_transform_info)]
+            a = (center_1[0] * skinWeightList[i][0]
+                + center_1[1] * skinWeightList[i][1]
+                + center_1[2] * skinWeightList[i][2]
+                + center_1[3] * skinWeightList[i][3])
+            b = (center_1[0] * clothStuff5Buffer[i][0]
+                + center_1[1] * clothStuff5Buffer[i][1]
+                + center_1[2] * clothStuff5Buffer[i][2]
+                + center_1[3] * clothStuff5Buffer[i][3])
+            c = (computeCenterOfMass(binormalBuffer[i], BlendIndicesList[i], nun_transform_info) * skinWeightList[i][0]
+                + computeCenterOfMass(binormalBuffer[i], clothStuff1Buffer[i], nun_transform_info) * skinWeightList[i][1]
+                + computeCenterOfMass(binormalBuffer[i], fogBuffer[i], nun_transform_info) * skinWeightList[i][2]
+                + computeCenterOfMass(binormalBuffer[i], clothStuff2Buffer[i], nun_transform_info) * skinWeightList[i][3])
             d = numpy.cross(b,c)
             vertNormBuff.append(b * normal_data[i][1] + c * normal_data[i][0] + d * normal_data[i][2])
             if not numpy.linalg.norm(vertNormBuff[-1]) == 0.0:
