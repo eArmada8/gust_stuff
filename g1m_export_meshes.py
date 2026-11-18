@@ -376,24 +376,23 @@ def parseNUNS1(chunkVersion, f, e):
     a,b = struct.unpack("<HH", f.read(4))
     nuns1_block['parentBoneID'] = a if e == '<' else b
     controlPointCount, = struct.unpack(e+"I", f.read(4))
-    f.read(0xB8)
+    counts = struct.unpack(e+"6I", f.read(24))
+    f.read(0xA0)
+    nuns1_block['controlPoints'] = []
     for i in range(controlPointCount):
         nuns1_block['controlPoints'].append(struct.unpack("ffff", f.read(16)))
     nuns1_block['influences'] = []
     for i in range(controlPointCount):
         influence = {}
         influence['P1'], influence['P2'], influence['P3'], influence['P4'], influence['P5'], influence['P6'],\
-            influence['P7'], influence['P8'] = struct.unpack(e+"iiiiffii", f.read(24))
+            influence['P7'], influence['P8'] = struct.unpack(e+"iiiiffii", f.read(32))
         nuns1_block['influences'].append(influence)
-    # reading the unknown sections data
-    temp = -1
-    while(temp != 0x424C5730):
-        temp, = struct.unpack(e+"I", f.read(4))
-    #BLWO
-    f.read(4)
-    blwoSize, = struct.unpack(e+"I", f.read(4))
-    f.read(blwoSize)
-    f.read(0xC)
+    f.seek(controlPointCount * 4, 1)
+    f.seek(counts[1]*4, 1)
+    f.seek(counts[2]*0x30, 1)
+    f.seek(counts[3]*0x10, 1)
+    f.seek(counts[4], 1)
+    f.seek(counts[5]*8, 1)
     return(nuns1_block)
 
 def parseNUNO(nuno_chunk, e):
@@ -437,6 +436,7 @@ def parseNUNV(nuno_chunk, e):
         nunv_section["version"], nunv_section["size"], nunv_section["chunk_count"], = struct.unpack(e+"III", f.read(12))
         nunv_section["chunks"] = []
         for i in range(nunv_section["chunk_count"]):
+            subsection_start = f.tell()
             chunk = {}
             chunk["Type"],chunk["size"],chunk["subchunk_count"] = struct.unpack(e+"III", f.read(12))
             chunk["subchunks"] = []
@@ -445,7 +445,7 @@ def parseNUNV(nuno_chunk, e):
                     chunk["subchunks"].append(parseNUNV1(nunv_section["version"],f,e))
                 else:
                     chunk["subchunks"].append({'Error': 'unsupported NUNV'})
-                    f.seek(chunk["size"],1)
+            f.seek(subsection_start + chunk["size"])
             nunv_section["chunks"].append(chunk)
     return(nunv_section)
 
@@ -456,6 +456,7 @@ def parseNUNS(nuno_chunk, e):
         nuns_section["version"], nuns_section["size"], nuns_section["chunk_count"], = struct.unpack(e+"III", f.read(12))
         nuns_section["chunks"] = []
         for i in range(nuns_section["chunk_count"]):
+            subsection_start = f.tell()
             chunk = {}
             chunk["Type"],chunk["size"],chunk["subchunk_count"] = struct.unpack(e+"III", f.read(12))
             chunk["subchunks"] = []
@@ -464,7 +465,7 @@ def parseNUNS(nuno_chunk, e):
                     chunk["subchunks"].append(parseNUNS1(nuns_section["version"],f,e))
                 else:
                     chunk["subchunks"].append({'Error': 'unsupported NUNS'})
-                    f.seek(chunk["size"],1)
+            f.seek(subsection_start + chunk["size"])
             nuns_section["chunks"].append(chunk)
     return(nuns_section)
 
@@ -545,7 +546,7 @@ def calc_nun_maps(nun_data, skel_data):
                     pos_xyz = (numpy.array(q_wxyz.rotate(p)) + temp_p).tolist()
                 bone = {}
                 bone['i'] = len(skel_data['boneList'])
-                bone['bone_id'] = nun_data[0]['name'] + 'bone_p' + str(parentBone) + "_" + str(len(skel_data['boneList']))
+                bone['bone_id'] = nun_data[i]['name'] + 'bone_p' + str(parentBone) + "_" + str(len(skel_data['boneList']))
                 bone['parentBone'] = parentBone
                 bone['parentID'] = parentID
                 bone['q_wxyz'] = list(q_wxyz)
@@ -770,7 +771,7 @@ def parseG1MG(g1mg_chunk,e):
                         for k in range(joint_info['joint_count']):
                             joint = {'id_referenceonly': k, 'vgmap_id_referenceonly': k*3}
                             joint['G1MMIndex'], joint['physicsIndex'], joint['jointIndex'] = struct.unpack(e+"3I", f.read(12))
-                            if joint['jointIndex'] > 0x80000000: #External Skeleton Bone
+                            if joint['jointIndex'] & 0x80000000: #External Skeleton Bone
                                 joint['physicsIndex'] = joint['physicsIndex'] ^ 0x80000000
                                 joint['jointIndex'] = joint['jointIndex'] ^ 0x80000000
                                 joint['0x80000000_flag'] = 'True'
@@ -1207,12 +1208,9 @@ def render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_da
             index = physicsBoneList[oldSkinIndiceList[i][0] // 3]
             if index < len(model_skel_data["boneList"]):
                 quat1 = Quaternion(model_skel_data["boneList"][index]["abs_q"])
-                rotation = quat1.unit.conjugate
-                quat2 = Quaternion([quat1[0], 0-quat1[1], 0-quat1[2], 0-quat1[3]]) \
-                    * Quaternion(0, position_data[i][0], position_data[i][1], position_data[i][2]) \
-                    * quat1
-                vertPosBuff.append((numpy.array(model_skel_data["boneList"][index]["abs_p"]) \
-                    + numpy.array([quat2[1], quat2[2], quat2[3]])).tolist())
+                rotation = quat1.unit
+                vertPosBuff.append((numpy.array(model_skel_data["boneList"][index]["abs_p"])
+                    + numpy.array(rotation.rotate(position_data[i][0:3]))).tolist())
                 if has_normal:
                     normal_data[i] = list(rotation.rotate(normal_data[i][0:3])) + list(normal_data[i][3:])
                 if has_tangent:
@@ -1248,11 +1246,10 @@ def render_cloth_submesh_2(submesh, subindex, model_mesh_metadata, model_skel_da
 def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path = '', e = '<', cull_vertices = True,\
         transform_cloth = True, write_empty_buffers = False, preserve_trianglestrip = False):
     if not nun_maps == False:
-        nun_indices = [x['name'][0:4] for x in nun_maps['nun_data']]
-        if 'nunv' in nun_indices:
-            nunv_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nunv')
-        if 'nuns' in nun_indices:
-            nuns_offset = [x['name'][0:4] for x in nun_maps['nun_data']].index('nuns')
+        names = [x['name'] for x in nun_maps['nun_data']]
+        nunv_offset = next((k for k, n in enumerate(names) if n == 'nunv1'), None)
+        nuns_offset = next((k for k, n in enumerate(names) if n == 'nuns1'), None)
+        nuno35_offset = next((k for k, n in enumerate(names) if n in ('nuno3', 'nuno5')), None)
     cloth_render_fail = False
     driverMesh_fmt = make_drivermesh_fmt()
     subvbs = [x for x in model_mesh_metadata['sections'] if x['type'] == "SUBMESH"][0]
@@ -1275,7 +1272,9 @@ def write_submeshes(g1mg_stream, model_mesh_metadata, skel_data, nun_maps, path 
             try:
                 if submesh_lod['clothID'] == 1 and not nun_maps == False and transform_cloth == True:
                     print("Performing cloth mesh (4D) transformation...".format(subindex))
-                    if (submesh_lod['NUNID']) >= 10000 and (submesh_lod['NUNID'] < 20000):
+                    if submesh_lod['NUNID'] >= 20000: # NUNO3 and NUNO5
+                        NUNID = submesh_lod['NUNID'] % 10000 + nuno35_offset
+                    elif (submesh_lod['NUNID']) >= 10000:
                         NUNID = (submesh_lod['NUNID'] % 10000) + nunv_offset
                     else:
                         NUNID = submesh_lod['NUNID'] % 10000
@@ -1338,7 +1337,7 @@ def parseSkelG1M(g1m_name):
                 if os.path.exists(g1m_name+'Oid.bin'):
                     ext_skel_oid = binary_oid_to_dict(g1m_name+'Oid.bin')
                     ext_skel_data = name_bones(ext_skel_data, ext_skel_oid)
-                have_skeleton == True # I guess some games duplicate this section?
+                have_skeleton = True # I guess some games duplicate this section?
             else:
                 f.seek(chunk["start_offset"] + chunk["size"],0) # Move to next chunk
             file["chunks"] = chunks

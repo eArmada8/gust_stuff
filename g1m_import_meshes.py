@@ -685,7 +685,7 @@ def build_g1m(g1m_name):
                         ext_skel = get_ext_skeleton(g1m_name)
                         if not ext_skel == False:
                             model_skel_data = combine_skeleton(ext_skel, model_skel_data)
-                    have_skeleton == True # I guess some games duplicate this section?
+                    have_skeleton = True # I guess some games duplicate this section?
                 else:
                     f.seek(chunk["start_offset"] + chunk["size"],0) # Move to next section
             new_g1mg_data = build_g1mg(g1m_name, model_skel_data, e)
