@@ -25,7 +25,7 @@ try:
 except ModuleNotFoundError as e:
     print("Python module missing! {}".format(e.msg))
     input("Press Enter to abort.")
-    raise   
+    raise
 
 # This script transforms cloth meshes (aka 4D meshes) by default, change the following line to False to disable
 transform_cloth_mesh_default = True
@@ -283,8 +283,6 @@ def parseNUNO5(chunkVersion, f, e, entryIDtoNunoID):
     lodCount, = struct.unpack(e+"I", f.read(4))
     f.seek(8,1)
     nuno5_block['entryID'], nuno5_block['entryIDflag'] = struct.unpack(e+"2H", f.read(4))
-    #if (nuno5_block['entryID'] in entryIDtoNunoID) and (nuno5_block['entryIDflag'] & 0x7FF):
-        #nuno5_block['parentSetID'] = entryIDtoNunoID[nuno5_block['entryID']]
     f.seek(12,1)
     for i in range(lodCount):
         skip10Size = 0
@@ -306,7 +304,7 @@ def parseNUNO5(chunkVersion, f, e, entryIDtoNunoID):
         if i == 0: # We only want the first LOD, apparently?
             nuno5_block['controlPoints'] = []
             nuno5_block['influences'] = []
-            for i in range(controlPointCount):
+            for _ in range(controlPointCount):
                 controlpoint = list(struct.unpack(e+"3f", f.read(12)))
                 controlpoint.append(1.0)
                 nuno5_block['controlPoints'].append(controlpoint)
@@ -330,7 +328,11 @@ def parseNUNO5(chunkVersion, f, e, entryIDtoNunoID):
             size = struct.unpack(e+"4H", f.read(8))[3]
             f.seek(size - 8, 1)
         f.seek(skip[6] * (0x48 if chunkVersion >= 0x30303333 else 0x24), 1)
-        f.seek(skip[7] * 32, 1)
+        # Subset data - run-length copy records
+        subset_data = [struct.unpack(e+"8I", f.read(32)) for _ in range(skip[7])]
+        if i == 0: # Only the first block has valid records?
+            nuno5_block['subsetRuns'] = [{'source_entry_id': x[0], 'unk': x[1], 'count': x[2],\
+                'src_start': x[3], 'dst_start': x[4]} for x in subset_data]
         if (flags & 0x4) and (chunkVersion >= 0x30303333):
             f.seek(4 * controlPointCount,1)
         if (skip[8] > 0) and (chunkVersion >= 0x30303333):
@@ -425,8 +427,19 @@ def parseNUNO(nuno_chunk, e):
                             if not chunk["subchunks"][-1]["entryID"] in entryIDtoNunoID.keys():
                                 entryIDtoNunoID[chunk["subchunks"][-1]["entryID"]] = j
                 if chunk["Type"] == 0x00030005:
-                    # Subset code would go here - I have no samples and my prior code was hopelessly broken
-                    pass
+                    # Reconstruct the NUNO5 subsets by copying data from prior complete sections
+                    base_by_id = {x['entryID']: k for k, x in enumerate(chunk["subchunks"]) if x['entryIDflag'] == 0}
+                    for subchunk in chunk["subchunks"]:
+                        if subchunk['entryIDflag'] != 0 and len(subchunk.get('subsetRuns', [])) > 0:
+                            if subchunk['subsetRuns'][0]['source_entry_id'] in base_by_id:
+                                new_indices = [0] * len(subchunk['controlPoints']) # Initialize empty list
+                                for run in subchunk['subsetRuns']: # Copy in the repeated data
+                                    assert run['dst_start'] + run['count'] <= len(new_indices)
+                                    new_indices[run['dst_start']:run['dst_start'] + run['count']]\
+                                        = range(run['src_start'],run['src_start'] + run['count'])
+                                # Index within this subsection - will be used later to reconstruct full NUNO5 sections
+                                subchunk['subsetBase'] = base_by_id[subchunk['subsetRuns'][0]['source_entry_id']]
+                                subchunk['subsetIndices'] = new_indices
                 f.seek(subsection_start + chunk["size"])
                 nuno_section["chunks"].append(chunk)
     return(nuno_section)
@@ -476,8 +489,11 @@ def stack_nun(nun_data):
     nun_stack = []
     for key in nun_data:
         for i in range(len(nun_data[key]['chunks'])):
+            subsection_start = len(nun_stack)
             for j in range(len(nun_data[key]['chunks'][i]['subchunks'])):
                 nun_stack.append(nun_data[key]['chunks'][i]['subchunks'][j])
+                if 'subsetBase' in nun_stack[-1]: # Record new position for NUNO5 subsets
+                    nun_stack[-1]['subsetBaseStack'] = subsection_start + nun_stack[-1]['subsetBase']
     return nun_stack
 
 def make_drivermesh_fmt():
@@ -498,7 +514,15 @@ def calc_nun_maps(nun_data, skel_data):
     clothMap = []
     clothParentIDMap = []
     driverMeshList = []
+    subsets = [] # List of which entries in the stack are subsets
     for i in range(len(nun_data)):
+        if 'subsetBaseStack' in nun_data[i]:
+            # NUNO5 subset, will need to be reconstructed after stacking, insert empty for now
+            subsets.append(i)
+            clothMap.append({})
+            clothParentIDMap.append(0)
+            driverMeshList.append({})
+            continue
         try:
             boneStart = len(skel_data['boneList'])
             parentBone = skel_data['boneIDList'][nun_data[i]['parentBoneID']]
@@ -595,6 +619,30 @@ def calc_nun_maps(nun_data, skel_data):
             clothMap.append({})
             clothParentIDMap.append(0)
             driverMeshList.append({})
+    # NUNO5 subsets reuse the control point bones of their base entry (no new bones are created)
+    for i in subsets:
+        base = nun_data[i]['subsetBaseStack']
+        indices = nun_data[i]['subsetIndices']
+        if not 'transform_info' in driverMeshList[base] or max(indices) >= len(driverMeshList[base]['transform_info']):
+            continue # Base entry failed, leave subset empty - should never happen unless missing external data?
+        to_subset = {b: k for k, b in enumerate(indices)}
+        base_mesh = driverMeshList[base]
+        clothMap[i] = {k: clothMap[base][b] for k, b in enumerate(indices)}
+        clothParentIDMap[i] = clothParentIDMap[base]
+        triangles = []
+        for k in range(len(indices)):
+            link = nun_data[i]['influences'][k] # Links use base indices
+            for a, b in ((link['P1'], link['P3']), (link['P2'], link['P4'])):
+                if a > 0 and b > 0 and a in to_subset and b in to_subset:
+                    triangles.append([k, to_subset[a], to_subset[b]])
+        driverMesh = {}
+        driverMesh["vertCount"] = len(indices)
+        # Copy vertices directly from base driver mesh
+        driverMesh["vertices"] = [{'SemanticName': x['SemanticName'], 'SemanticIndex': x['SemanticIndex'],
+                'Buffer': [x['Buffer'][b] for b in indices]} for x in base_mesh['vertices']]
+        driverMesh["indices"] = triangles
+        driverMesh["transform_info"] = [base_mesh['transform_info'][b] for b in indices]
+        driverMeshList[i] = driverMesh
     return({'clothMap': clothMap, 'clothParentIDMap': clothParentIDMap, 'driverMeshList': driverMeshList})
 
 def parseG1MG(g1mg_chunk,e):
@@ -948,7 +996,7 @@ def generate_vb(index, g1mg_stream, model_mesh_metadata, fmts, e = '<'):
                                 * (i % vb['data'][vb_attr['data'][index]['buffer_list'][j]]['count'])))
                         vb_stream += f.read(vb['data'][vb_attr['data'][index]['buffer_list'][j]]['stride'])
                 vb_struct = read_vb_stream(vb_stream, fmts[index], e)
-            else: # 
+            else: #
                 f.seek(vb['data'][vb_attr['data'][index]['buffer_list'][0]]['offset'])
                 vb_struct = read_vb_stream(f.read(int(vb['data'][vb_attr['data'][index]['buffer_list'][0]]['stride']\
                     * vb['data'][vb_attr['data'][index]['buffer_list'][0]]['count'])), fmts[index], e)
@@ -1011,7 +1059,7 @@ def balance_submesh_indices_and_weights (submesh):
             'InstanceDataStepRate': '0'})
         submesh['fmt'][stride_key] = str(stride + 16)
     else:
-        if (len(blidx_layers) > 0 and 
+        if (len(blidx_layers) > 0 and
                 len(submesh['vb'][blidx_layers[max(blidx_layers)]]['Buffer'][0]) >
                 len(submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][0])):
             first_empty = len(submesh['vb'][bl_wt_layers[max(bl_wt_layers)]]['Buffer'][0])
@@ -1071,7 +1119,6 @@ def generate_submesh(subindex, g1mg_stream, model_mesh_metadata, skel_data, fmts
 def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', remove_physics = False):
     semantic_names = [x['SemanticName'] for x in submesh['vb']]
     is_nuno5 = (nun_maps['nun_data'][NUNID]['name'] == 'nuno5')
-    # NUNO5 subset code will go here eventually
     new_fmt = copy.deepcopy(submesh['fmt'])
     new_vb = copy.deepcopy(submesh['vb'])
     position_data = [x for x in submesh['vb'] if x['SemanticName'] == 'POSITION'][0]['Buffer']
@@ -1130,7 +1177,9 @@ def render_cloth_submesh(submesh, NUNID, model_skel_data, nun_maps, e = '<', rem
                 tangentBuffer.append(b * tangent_data[i][1] + c * tangent_data[i][0] + d * tangent_data[i][2])
                 tangentBuffer[-1] = (tangentBuffer[-1] / numpy.linalg.norm(tangentBuffer[-1])).tolist() + [tangent_data[i][3]]
             if is_nuno5:
-                d = (d / numpy.linalg.norm(d))
+                d_len = numpy.linalg.norm(d)
+                if d_len > 0: # Avoid divide by zero
+                    d = (d / numpy.linalg.norm(d))
             vertPosBuff.append((d * clothStuff4Buffer[i] + a).tolist())
     #Position
     original_pos_fmt = int([x for x in new_fmt['elements'] if x['SemanticName'] == 'POSITION'][0]['id'])
