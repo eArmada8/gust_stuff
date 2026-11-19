@@ -1040,6 +1040,22 @@ def balance_submesh_indices_and_weights (submesh):
     num_verts = len(submesh['vb'][0]['Buffer'])
     if num_verts == 0: # Modded file with deleted submesh, skip processing
         return submesh
+    while len(blend_indices_idx) < len(blend_weights_idx): # Not sure why this sometimes happens
+        new_index_buffer = [[0,0,0,0] for _ in range(num_verts)]
+        submesh['vb'].append({'SemanticName': 'BLENDINDICES',
+            'SemanticIndex': str(len(blidx_layers)), 'Buffer': new_index_buffer})
+        submesh['fmt']['elements'].append({'id': str(len(submesh['fmt']['elements'])),
+            'SemanticName': 'BLENDINDICES',
+            'SemanticIndex': str(len(blidx_layers)),
+            'Format': 'R8G8B8A8_UINT',
+            'InputSlot': '0',
+            'AlignedByteOffset': str(stride),
+            'InputSlotClass': 'per-vertex',
+            'InstanceDataStepRate': '0'})
+        blend_indices_idx.append(len(submesh['vb']) - 1)
+        blidx_layers[len(blidx_layers)] = len(submesh['vb']) - 1
+        stride += 4
+        submesh['fmt'][stride_key] = str(stride)
     if len(blend_indices_idx) > len(blend_weights_idx):
         new_weight_buffer = []
         for i in range(num_verts):

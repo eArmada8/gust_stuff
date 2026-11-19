@@ -186,7 +186,6 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
         os.path.exists('{0}/{1}.vb'.format(g1m_name, x)))]
     composite_vbs = []
     current_vbsub = 0
-    extra_blendweight_detected = False
     for i in mesh_with_subs:
         # When processing each mesh, cull the submesh list of submeshes that have been deleted
         existing_submeshes = [x for x in mesh_with_subs[i] if str(x) in meshfiles]
@@ -307,15 +306,36 @@ def build_composite_buffers(g1m_name, model_mesh_metadata, g1mg_stream, skel_dat
                             if fmt['elements'][k]['SemanticName'] in ['BLENDWEIGHT', 'BLENDWEIGHTS']]
                         bl_wt_layers = dict(sorted({int(fmt['elements'][k]['SemanticIndex']):k for k in blend_weights_idx}.items()))
                         max_wt_layer = bl_wt_layers[max(bl_wt_layers)] if len(bl_wt_layers) > 0 else None
-                        if len(vb) > len(expected_vbattr): # Extra BLENDWEIGHT inserted by export script for final weight
+                        if len(vb) > len(expected_vbattr): # Extra BLENDWEIGHT or BLENDINDICES inserted by export script for final weight
                             if ((len(vb) == len(expected_vbattr) + 1)
+                                    and (fmt['elements'][-1]['SemanticName'] == 'BLENDINDICES')):
+                                max_groups = (len([k for k in range(len(fmt['elements']))
+                                    if fmt['elements'][k]['SemanticName'] == 'BLENDINDICES']) - 1) * 4
+                                print("Extra BLENDINDICESs detected in this submesh, will drop.")
+                                print("Be sure this submesh uses a max of {} vertex groups.".format(max_groups))
+                                print("This is expected for certain games e.g. Nioh 3.")
+                                # Normalize remaining weights before dropping final BLENDINDICES
+                                bl_wt_layers_keys = list(bl_wt_layers.keys())
+                                for k in range(len(vb[0]['Buffer'])):
+                                    total_wt = 0.0
+                                    for l in bl_wt_layers_keys[:-1]:
+                                        total_wt += sum(vb[bl_wt_layers[l]]['Buffer'][k])
+                                    if abs(1 - total_wt) > 1e-5 and total_wt > 1e-5:
+                                        for l in bl_wt_layers_keys[:-1]:
+                                            vb[bl_wt_layers[l]]['Buffer'][k] = [(x / total_wt) for x in vb[bl_wt_layers[l]]['Buffer'][k]]
+                                    vb[bl_wt_layers[bl_wt_layers_keys[-1]]]['Buffer'][k] = [0.0 for _
+                                        in range(len(vb[bl_wt_layers[bl_wt_layers_keys[-1]]]['Buffer'][k]))]
+                                stride = fmt[stride_name] = str(int(stride)
+                                    - get_stride_from_dxgi_format(fmt['elements'][-1]['Format']))
+                                fmt['elements'].pop()
+                                vb.pop()
+                            elif ((len(vb) == len(expected_vbattr) + 1)
                                     and (fmt['elements'][-1]['SemanticName'] in ['BLENDWEIGHT', 'BLENDWEIGHTS'])):
-                                if extra_blendweight_detected == False:
-                                    max_weights = len([k for k in range(len(fmt['elements']))
-                                        if fmt['elements'][k]['SemanticName'] == 'BLENDINDICES']) * 4 - 3
-                                    extra_blendweight_detected = True
-                                    print("Extra BLENDWEIGHTs detected, will drop.  Be sure meshes use a max of {} vertex groups.".format(max_weights))
-                                    print("This is expected for certain games e.g. Atelier Yumia.")
+                                max_groups = len([k for k in range(len(fmt['elements']))
+                                    if fmt['elements'][k]['SemanticName'] == 'BLENDINDICES']) * 4 - 3
+                                print("Extra BLENDWEIGHTs detected in this submesh, will drop.")
+                                print("Be sure this submesh uses a max of {} vertex groups.".format(max_groups))
+                                print("This is expected for certain games e.g. Atelier Yumia.")
                                 # Normalize weights before removing final BLENDWEIGHT
                                 for k in range(len(vb[0]['Buffer'])):
                                     total_wt = 0.0
@@ -553,7 +573,6 @@ def build_g1mg(g1m_name, skel_data, e = '<'):
                     dataType_list = {'R32_FLOAT': 0x00, 'R32G32_FLOAT': 0x01, 'R32G32B32_FLOAT': 0x02, 'R32G32B32A32_FLOAT': 0x03,\
                     'R8G8B8A8_UINT': 0x05, 'R16G16B16A16_UINT': 0x07, 'R32G32B32A32_UINT': 0x09, 'R16G16_FLOAT': 0x0A,\
                     'R16G16B16A16_FLOAT': 0x0B, 'R8G8B8A8_UNORM': 0x0D,  'UNKNOWN': 0xFF}
-                    extra_blendweight_detected = False
                     for j in range(len(composite_vbs)):
                         vbattr_section += struct.pack(e+"2I", 1, j)
                         vbattr_section += struct.pack(e+"I", len(composite_vbs[j]['fmt']['elements']))
