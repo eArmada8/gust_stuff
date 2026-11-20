@@ -20,7 +20,7 @@ Finally, I want to thank the folks who wrote the glTF specs, tutorial and valida
 
 ## AI Disclosure
 
-I used AI (Claude, attached to ghidra) as a debugger / decompiler to help me debug persistent errors, and I wrote the code to fix those errors.
+I used AI (Claude, attached to ghidra) as a debugger / decompiler to help me debug persistent errors, and I wrote the code to fix those errors.  Some math functions were written by AI, and some of the NUNO5 subset code as well - all were checked by me.
 
 ## Requirements:
 1. Python 3.10 and newer is required for use of these scripts.  It is free from the Microsoft Store, for Windows users.  For Linux users, please consult your distro.
