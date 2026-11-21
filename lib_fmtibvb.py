@@ -3,11 +3,22 @@
 #
 # GitHub eArmada8/gust_stuff
 
-import io, re, struct, json
+try:
+    import io, re, struct, json
+    from functools import lru_cache
+except ModuleNotFoundError as e:
+    print("Python module missing! {}".format(e.msg))
+    input("Press Enter to abort.")
+    raise
 
-# Currently only simple formats (8-, 16-, and 32-bit) are supported.  Floats must be 32-bit.
-# Attempting to read an unsupported format will return a raw bytes object.
-def unpack_dxgi_vector(f, stride, dxgi_format, e = '<'):
+try: # For backwards compatibility
+    import numpy
+except ImportError:
+    numpy = None
+
+@lru_cache(maxsize=128, typed=False)
+def _dxgi_format_split(dxgi_format):
+    numtype, vec_bits, vec_elements, vec_stride = 'UNSUPPORTED', 0, 0, 0
     dxgi_format = dxgi_format.split('DXGI_FORMAT_')[-1]
     dxgi_format_split = dxgi_format.split('_')
     if len(dxgi_format_split) == 2:
@@ -19,133 +30,81 @@ def unpack_dxgi_vector(f, stride, dxgi_format, e = '<'):
         else:
             vec_bits = 0
             vec_elements = 0
-    else:
-        numtype = 'UNSUPPORTED'
+        vec_stride = vec_elements * vec_bits / 8 
+    return (numtype, vec_bits, vec_elements, vec_stride)
 
-    if numtype == 'FLOAT' and (vec_elements * vec_bits / 8 == stride):
-        if vec_bits == 32:
-            read = list(struct.unpack(e+str(vec_elements)+"f", f.read(stride)))
-        elif vec_bits == 16:
-            read = list(struct.unpack(e+str(vec_elements)+"e", f.read(stride)))
-    elif numtype == 'UINT' and (vec_elements * vec_bits / 8 == stride):
-        if vec_bits == 32:
-            read = list(struct.unpack(e+str(vec_elements)+"I", f.read(stride)))
-        elif vec_bits == 16:
-            read = list(struct.unpack(e+str(vec_elements)+"H", f.read(stride)))
-        elif vec_bits == 8:
-            read = list(struct.unpack(e+str(vec_elements)+"B", f.read(stride)))
-    elif numtype == "SINT" and (vec_elements * vec_bits / 8 == stride):
-        if vec_bits == 32:
-            read = list(struct.unpack(e+str(vec_elements)+"i", f.read(stride)))
-        elif vec_bits == 16:
-            read = list(struct.unpack(e+str(vec_elements)+"h", f.read(stride)))
-        elif vec_bits == 8:
-            read = list(struct.unpack(e+str(vec_elements)+"b", f.read(stride)))
-    elif numtype == "UNORM" and (vec_elements * vec_bits / 8 == stride):
-        # First read as integers
-        if vec_bits == 32:
-            read = list(struct.unpack(e+str(vec_elements)+"I", f.read(stride)))
-        elif vec_bits == 16:
-            read = list(struct.unpack(e+str(vec_elements)+"H", f.read(stride)))
-        elif vec_bits == 8:
-            read = list(struct.unpack(e+str(vec_elements)+"B", f.read(stride)))
-        # Convert to normalized floats
-        float_max = ((2**vec_bits)-1)
-        for i in range(len(read)):
-            read[i] = read[i] / float_max
-    elif numtype == "SNORM" and (vec_elements * vec_bits / 8 == stride):
-        # First read as integers
-        if vec_bits == 32:
-            read = list(struct.unpack(e+str(vec_elements)+"i", f.read(stride)))
-        elif vec_bits == 16:
-            read = list(struct.unpack(e+str(vec_elements)+"h", f.read(stride)))
-        elif vec_bits == 8:
-            read = list(struct.unpack(e+str(vec_elements)+"b", f.read(stride)))
-        # Convert to normalized floats
-        float_max = ((2**(vec_bits-1))-1)
-        for i in range(len(read)):
-            read[i] = read[i] / float_max
+@lru_cache(maxsize=128, typed=False)
+def _dxgi_info(dxgi_format, stride, e = '<'):
+    numtype, vec_bits, vec_elements, vec_stride = _dxgi_format_split(dxgi_format)
+    float_max = 0
+    n_code, s_code = None, None
+    if int(stride) == vec_stride:
+        if numtype == 'FLOAT':
+            if vec_bits == 32:
+                n_code, s_code = e + 'f4', 'f'
+            elif vec_bits == 16:
+                n_code, s_code = e + 'f2', 'e'
+        elif numtype in ['UINT', 'UNORM']:
+            if vec_bits == 32:
+                n_code, s_code = e + 'u4', 'I'
+            elif vec_bits == 16:
+                n_code, s_code = e + 'u2', 'H'
+            elif vec_bits == 8:
+                n_code, s_code = e + 'u1', 'B'
+            if numtype == "UNORM":
+                float_max = ((2**vec_bits)-1)
+        elif numtype in ['SINT', 'SNORM']:
+            if vec_bits == 32:
+                n_code, s_code = e + 'i4', 'i'
+            elif vec_bits == 16:
+                n_code, s_code = e + 'i2', 'h'
+            elif vec_bits == 8:
+                n_code, s_code = e + 'i1', 'b'
+            if numtype == "SNORM":
+                float_max = ((2**(vec_bits-1))-1)
+    return (n_code, s_code, vec_elements, numtype, float_max)
+
+# Currently only simple formats (8-, 16-, and 32-bit) are supported.  Floats must be 16- or 32-bit.
+# Attempting to read an unsupported format will return a raw bytes object.
+def unpack_dxgi_vector(f, stride, dxgi_format, e = '<'):
+    n_code, s_code, vec_elements, numtype, float_max = _dxgi_info(dxgi_format, stride, e)
+    if not n_code == None:
+        read = list(struct.unpack(e+str(vec_elements)+s_code, f.read(stride)))
+        if numtype in ['UNORM', 'SNORM']:
+            # Convert to normalized floats
+            read = [x / float_max for x in read]
     else:
         read = f.read(stride)
     return (read)
 
 def pack_dxgi_vector(f, data, stride, dxgi_format, e = '<'):
-    dxgi_format = dxgi_format.split('DXGI_FORMAT_')[-1]
-    dxgi_format_split = dxgi_format.split('_')
-    if len(dxgi_format_split) == 2:
-        numtype = dxgi_format_split[1]
-        vec_format = re.findall("[0-9]+",dxgi_format_split[0])
-        if len(vec_format) > 0:
-            vec_bits = int(vec_format[0])
-            vec_elements = len(vec_format)
-        else:
-            vec_bits = 0
-            vec_elements = 0
-    else:
-        numtype = 'UNSUPPORTED'
-
-    if numtype == 'FLOAT' and (vec_elements * vec_bits / 8 == stride):
-        for i in range(vec_elements):
-            if vec_bits == 32:
-                f.write(struct.pack(e+"f", data[i]))
-            elif vec_bits == 16:
-                f.write(struct.pack(e+"e", data[i]))
-    elif numtype == 'UINT' and (vec_elements * vec_bits / 8 == stride):
-        for i in range(vec_elements):
-            if vec_bits == 32:
-                f.write(struct.pack(e+"I", data[i]))
-            elif vec_bits == 16:
-                f.write(struct.pack(e+"H", data[i]))
-            elif vec_bits == 8:
-                f.write(struct.pack(e+"B", data[i]))
-    elif numtype == "SINT" and (vec_elements * vec_bits / 8 == stride):
-        for i in range(vec_elements):
-            if vec_bits == 32:
-                f.write(struct.pack(e+"i", data[i]))
-            elif vec_bits == 16:
-                f.write(struct.pack(e+"h", data[i]))
-            elif vec_bits == 8:
-                f.write(struct.pack(e+"b", data[i]))
-    elif numtype == 'UNORM' and (vec_elements * vec_bits / 8 == stride):
-        converted_data = []
-        for i in range(vec_elements):
-            #First convert back to unsigned integers, then pack
-            float_max = ((2**vec_bits)-1)
-            converted_data.append(int(round(min(max(data[i],0), 1) * float_max)))
-            if vec_bits == 32:
-                f.write(struct.pack(e+"I", converted_data[i]))
-            elif vec_bits == 16:
-                f.write(struct.pack(e+"H", converted_data[i]))
-            elif vec_bits == 8:
-                f.write(struct.pack(e+"B", converted_data[i]))
-    elif numtype == 'SNORM' and (vec_elements * vec_bits / 8 == stride):
-        converted_data = []
-        for i in range(vec_elements):
-            #First convert back to unsigned integers, then pack
-            float_max = ((2**(vec_bits-1))-1)
-            converted_data.append(int(round(min(max(data[i],-1), 1) * float_max)))
-            if vec_bits == 32:
-                f.write(struct.pack(e+"i", converted_data[i]))
-            elif vec_bits == 16:
-                f.write(struct.pack(e+"h", converted_data[i]))
-            elif vec_bits == 8:
-                f.write(struct.pack(e+"b", converted_data[i]))
+    n_code, s_code, vec_elements, numtype, float_max = _dxgi_info(dxgi_format, stride, e)
+    if not n_code == None:
+        # Convert normalized floats to integers
+        if numtype == 'UNORM':
+            data = [int(round(min(max(x,0), 1) * float_max)) for x in data]
+        elif numtype == 'SNORM':
+            data = [int(round(min(max(x,-1), 1) * float_max)) for x in data]
+        f.write(struct.pack(e+"{}{}".format(vec_elements, s_code), *data[:vec_elements]))
     else:
         write = f.write(data)
     return
 
+@lru_cache(maxsize=128, typed=False)
 def get_stride_from_dxgi_format(dxgi_format):
-    dxgi_format = dxgi_format.split('DXGI_FORMAT_')[-1]
-    dxgi_format_split = dxgi_format.split('_')
-    if len(dxgi_format_split) == 2:
-        numtype = dxgi_format_split[1]
-        vec_format = re.findall("[0-9]+",dxgi_format_split[0])
-        if len(vec_format) > 0:
-            return(int(len(vec_format) * int(vec_format[0]) / 8))
+    _, _, _, vec_stride = _dxgi_format_split(dxgi_format)
+    return int(vec_stride) if vec_stride else False
+
+def _calc_individual_buffer_strides (elements, stride):
+    buffer_strides = []
+    # Calculate individual buffer strides
+    for i in range(len(elements)):
+        if i == len(elements) - 1:
+            buffer_strides.append(int(stride) - int(elements[i]["AlignedByteOffset"]))
         else:
-            return False
-    else:
-        return False
+            buffer_strides.append(int(elements[i+1]["AlignedByteOffset"]) \
+                - int(elements[i]["AlignedByteOffset"]))
+    return buffer_strides
 
 def read_fmt(fmt_filename):
     fmt_struct = {}
@@ -190,19 +149,13 @@ def write_fmt(fmt_struct, fmt_filename):
 
 def read_ib_stream(ib_stream, fmt_struct, e = '<'):
     ib_data = []
-    # Cheating a bit here, since all index buffers I've seen are single numbers, but fmt doesn't have a stride for IB
-    ib_stride = int(int(re.findall("[0-9]+", fmt_struct["format"])[0])/8)
-    with io.BytesIO(ib_stream) as f:
-        length = f.seek(0,2)
-        f.seek(0)
-        vertex_num = 0
-        triangle = []
-        while f.tell() < length:
-            triangle.extend(unpack_dxgi_vector(f, ib_stride, fmt_struct["format"], e))
-            vertex_num += 1
-            if vertex_num % 3 == 0 or f.tell() == length:
-                ib_data.append(triangle)
-                triangle = []
+    ib_stride = get_stride_from_dxgi_format(fmt_struct["format"])
+    n_code, s_code, vec_elements, _, _ = _dxgi_info(fmt_struct["format"], ib_stride, e)
+    if numpy:
+        raw_data = numpy.frombuffer(ib_stream, dtype=n_code).tolist()
+    else:
+        raw_data = list(struct.unpack(e+str(len(ib_stream) // ib_stride)+s_code, ib_stream))
+    ib_data = [raw_data[i:i+3] for i in range(0, len(raw_data), 3)]
     return(ib_data)
 
 def read_ib(ib_filename, fmt_struct, e = '<'):
@@ -211,17 +164,20 @@ def read_ib(ib_filename, fmt_struct, e = '<'):
     return(read_ib_stream(ib_stream, fmt_struct, e))
 
 def write_ib_stream(ib_data, ib_stream, fmt_struct, e = '<'):
-    # See above about cheating
-    ib_stride = int(int(re.findall("[0-9]+", fmt_struct["format"])[0])/8)
-    if len(ib_data) > 0:
-        if type(ib_data[0]) == list: # Flatten list for legacy code
-            new_ib_data = [x for y in ib_data for x in y]
-        else:
-            new_ib_data = ib_data
+    ib_stride = get_stride_from_dxgi_format(fmt_struct["format"])
+    n_code, s_code, vec_elements, _, _ = _dxgi_info(fmt_struct["format"], ib_stride, e)
+    if len(ib_data) > 0 and isinstance(ib_data[0], list):
+        new_ib_data = [x for y in ib_data for x in y]
     else:
         new_ib_data = ib_data
-    for i in range(len(new_ib_data)):
-        pack_dxgi_vector(ib_stream, [new_ib_data[i]], ib_stride, fmt_struct["format"], e)
+    if numpy:
+        new_ib_array = numpy.asarray(new_ib_data, dtype=numpy.int64)
+        info = numpy.iinfo(n_code)
+        if (new_ib_array < info.min).any() or (new_ib_array > info.max).any():
+            raise OverflowError(f"Values exceed {n_code} range [{info.min}, {info.max}]")
+        ib_stream.write(new_ib_array.astype(n_code).tobytes())
+    else:
+        ib_stream.write(struct.pack(e+"{}{}".format(len(new_ib_data), s_code), *new_ib_data))
     return
 
 def write_ib(ib_data, ib_filename, fmt_struct, e = '<'):
@@ -229,62 +185,51 @@ def write_ib(ib_data, ib_filename, fmt_struct, e = '<'):
         write_ib_stream(ib_data, f, fmt_struct, e)
     return
 
-def read_vb_stream(vb_stream, fmt_struct, e = '<'):
+def _read_elements(vb_stream, fmt_struct, input_slot = None, e = '<'):
     vb_data = []
-    with io.BytesIO(vb_stream) as f:
-        length = f.seek(0,2)
-        f.seek(0)
-        num_vertex = int(length / int(fmt_struct["stride"]))
-        buffer_strides = []
-        # Calculate individual buffer strides
-        for i in range(len(fmt_struct["elements"])):
-            if i == len(fmt_struct["elements"]) - 1:
-                buffer_strides.append(int(fmt_struct["stride"]) - int(fmt_struct["elements"][i]["AlignedByteOffset"]))
+    stride_sem = "vb{} stride".format(input_slot) if not input_slot == None else "stride"
+    stride = int(fmt_struct[stride_sem])
+    num_vertex = len(vb_stream) // stride
+    if not input_slot == None:
+        elements = [x for x in fmt_struct['elements'] if x['InputSlot'] == str(input_slot)]
+    else:
+        elements = fmt_struct['elements']
+    buffer_strides = _calc_individual_buffer_strides(elements, stride)
+    # Read in the buffers
+    if numpy:
+        raw_vals = numpy.frombuffer(vb_stream, numpy.uint8, count=num_vertex*stride).reshape(num_vertex, stride)
+    for i in range(len(elements)):
+        new_element = {}
+        new_element["SemanticName"] = elements[i]["SemanticName"]
+        new_element["SemanticIndex"] = elements[i]["SemanticIndex"]
+        if not input_slot == None:
+            new_element["InputSlot"] = str(input_slot)
+        new_element_buffer = []
+        n_code, s_code, vec_elements, numtype, float_max = _dxgi_info(elements[i]["Format"], buffer_strides[i], e)
+        if numpy:
+            cols = raw_vals[:, int(elements[i]["AlignedByteOffset"])
+                :int(elements[i]["AlignedByteOffset"])+buffer_strides[i]]
+            if not n_code == None:
+                new_element_buffer = numpy.ascontiguousarray(cols).view(n_code).reshape(num_vertex, vec_elements)
+                if numtype in ['UNORM', 'SNORM']:
+                    new_element_buffer = new_element_buffer / float_max
+                new_element_buffer = new_element_buffer.tolist()
             else:
-                buffer_strides.append(int(fmt_struct["elements"][i+1]["AlignedByteOffset"]) \
-                    - int(fmt_struct["elements"][i]["AlignedByteOffset"]))
-        # Read in the buffers
-        for i in range(len(fmt_struct["elements"])):
-            element = {}
-            element["SemanticName"] = fmt_struct["elements"][i]["SemanticName"]
-            element["SemanticIndex"] = fmt_struct["elements"][i]["SemanticIndex"]
-            element_buffer = []
-            for j in range(num_vertex):
-                f.seek(j * int(fmt_struct["stride"]) + int(fmt_struct["elements"][i]["AlignedByteOffset"]),0)
-                element_buffer.append(unpack_dxgi_vector(f, buffer_strides[i], fmt_struct["elements"][i]["Format"], e))
-            element["Buffer"] = element_buffer
-            vb_data.append(element)
+                new_element_buffer = [bytes(r) for r in cols]
+        else:
+            with io.BytesIO(vb_stream) as f:
+                for j in range(num_vertex):
+                    f.seek(j * stride + int(elements[i]["AlignedByteOffset"]),0)
+                    new_element_buffer.append(unpack_dxgi_vector(f, buffer_strides[i], elements[i]["Format"], e))
+        new_element["Buffer"] = new_element_buffer
+        vb_data.append(new_element)
     return(vb_data)
 
+def read_vb_stream(vb_stream, fmt_struct, e = '<'):
+    return(_read_elements(vb_stream, fmt_struct, None, e))
+
 def read_seg_vb_stream(vb_stream, fmt_struct, input_slot, e = '<'):
-    seg_stride = "vb{} stride".format(input_slot)
-    seg_elements = [x for x in fmt_struct['elements'] if x['InputSlot'] == input_slot]
-    vb_data = []
-    with io.BytesIO(vb_stream) as f:
-        length = f.seek(0,2)
-        f.seek(0)
-        num_vertex = int(length / int(fmt_struct[seg_stride]))
-        buffer_strides = []
-        # Calculate individual buffer strides
-        for i in range(len(seg_elements)):
-            if i == len(seg_elements) - 1:
-                buffer_strides.append(int(fmt_struct[seg_stride]) - int(seg_elements[i]["AlignedByteOffset"]))
-            else:
-                buffer_strides.append(int(seg_elements[i+1]["AlignedByteOffset"]) \
-                    - int(seg_elements[i]["AlignedByteOffset"]))
-        # Read in the buffers
-        for i in range(len(seg_elements)):
-            element = {}
-            element["SemanticName"] = seg_elements[i]["SemanticName"]
-            element["SemanticIndex"] = seg_elements[i]["SemanticIndex"]
-            element["InputSlot"] = seg_elements[i]["InputSlot"]
-            element_buffer = []
-            for j in range(num_vertex):
-                f.seek(j * int(fmt_struct[seg_stride]) + int(seg_elements[i]["AlignedByteOffset"]),0)
-                element_buffer.append(unpack_dxgi_vector(f, buffer_strides[i], seg_elements[i]["Format"], e))
-            element["Buffer"] = element_buffer
-            vb_data.append(element)
-    return(vb_data)
+    return(_read_elements(vb_stream, fmt_struct, input_slot, e))
 
 def read_vb(vb_filename, fmt_struct, e = '<'):
     if 'stride' in fmt_struct:
@@ -303,50 +248,64 @@ def read_vb(vb_filename, fmt_struct, e = '<'):
         input("Press Enter to abort.")
         raise
 
-def write_vb_stream(vb_data, vb_stream, fmt_struct, e = '<', interleave = True):
-    buffer_strides = []
-    # Calculate individual buffer strides
-    for i in range(len(fmt_struct["elements"])):
-        if i == len(fmt_struct["elements"]) - 1:
-            buffer_strides.append(int(fmt_struct["stride"]) - int(fmt_struct["elements"][i]["AlignedByteOffset"]))
-        else:
-            buffer_strides.append(int(fmt_struct["elements"][i+1]["AlignedByteOffset"]) \
-                - int(fmt_struct["elements"][i]["AlignedByteOffset"]))
-    if interleave == True:
-        # Write out the buffers, vertex by vertex.
-        for j in range(len(vb_data[0]["Buffer"])):
-            for i in range(len(fmt_struct["elements"])):
-                pack_dxgi_vector(vb_stream, vb_data[i]["Buffer"][j], buffer_strides[i], fmt_struct["elements"][i]["Format"], e)
+def _write_elements(vb_data, vb_stream, fmt_struct, input_slot = None, e = '<', interleave = True):
+    stride_sem = "vb{} stride".format(input_slot) if not input_slot == None else "stride"
+    stride = int(fmt_struct[stride_sem])
+    if not input_slot == None:
+        vb_data = [x for x in vb_data if x['InputSlot'] == input_slot]
+        elements = [x for x in fmt_struct['elements'] if x['InputSlot'] == str(input_slot)]
     else:
-        # Write out the buffers, element by element.
-        for i in range(len(fmt_struct["elements"])):
+        elements = fmt_struct['elements']
+    num_vertex = len(vb_data[0]["Buffer"])
+    buffer_strides = _calc_individual_buffer_strides(elements, stride)
+    # Write out the buffers
+    if numpy:
+        array_stack = []
+        for i in range(len(elements)):
+            n_code, s_code, vec_elements, numtype, float_max = _dxgi_info(elements[i]["Format"], buffer_strides[i], e)
+            if not n_code is None:
+                n_array = numpy.array([row[:vec_elements] for row in vb_data[i]["Buffer"]]).reshape(num_vertex, vec_elements)
+                if numtype == 'UNORM':
+                    n_array = numpy.rint(numpy.clip(n_array, 0, 1) * float_max)
+                elif numtype == 'SNORM':
+                    n_array = numpy.rint(numpy.clip(n_array, -1, 1) * float_max)
+                if numtype in ['UINT', 'SINT']:
+                    if (n_array.size > 0) and numpy.issubdtype(n_array.dtype, numpy.floating):
+                        raise TypeError(f"Expected integer array, got float dtype {n_array.dtype}")
+                if numtype == 'FLOAT':
+                    info = numpy.finfo(n_code)
+                else:
+                    info = numpy.iinfo(n_code)
+                if (n_array.size > 0) and ((n_array < info.min).any() or (n_array > info.max).any()):
+                    raise OverflowError(f"Values exceed {n_code} range [{info.min}, {info.max}]")
+                array_stack.append(n_array.astype(n_code).view(numpy.uint8).reshape(num_vertex, buffer_strides[i]))
+            else:
+                array_stack.append(numpy.frombuffer(b''.join(vb_data[i]["Buffer"]),
+                    numpy.uint8).reshape(num_vertex, buffer_strides[i]))
+        if interleave == True:
+            # Write out the buffers, vertex by vertex.
+            vb_stream.write(numpy.hstack(array_stack).tobytes())
+        else:
+            # Write out the buffers, element by element.
+            for i in range(len(array_stack)):
+                vb_stream.write(array_stack[i].tobytes())
+    else:
+        if interleave == True:
+            # Write out the buffers, vertex by vertex.
             for j in range(len(vb_data[0]["Buffer"])):
-                pack_dxgi_vector(vb_stream, vb_data[i]["Buffer"][j], buffer_strides[i], fmt_struct["elements"][i]["Format"], e)
-    return
+                for i in range(len(elements)):
+                    pack_dxgi_vector(vb_stream, vb_data[i]["Buffer"][j], buffer_strides[i], elements[i]["Format"], e)
+        else:
+            # Write out the buffers, element by element.
+            for i in range(len(elements)):
+                for j in range(len(vb_data[0]["Buffer"])):
+                    pack_dxgi_vector(vb_stream, vb_data[i]["Buffer"][j], buffer_strides[i], elements[i]["Format"], e)
+
+def write_vb_stream(vb_data, vb_stream, fmt_struct, e = '<', interleave = True):
+    _write_elements(vb_data, vb_stream, fmt_struct, None, e, interleave)
 
 def write_seg_vb_stream(vb_data, vb_stream, fmt_struct, input_slot, e = '<', interleave = True):
-    buffer_strides = []
-    seg_stride = fmt_struct["vb{} stride".format(input_slot)]
-    seg_vb_data = [x for x in vb_data if x['InputSlot'] == input_slot]
-    seg_elements = [x for x in fmt_struct['elements'] if x['InputSlot'] == input_slot]
-    # Calculate individual buffer strides
-    for i in range(len(seg_elements)):
-        if i == len(seg_elements) - 1:
-            buffer_strides.append(int(seg_stride) - int(seg_elements[i]["AlignedByteOffset"]))
-        else:
-            buffer_strides.append(int(seg_elements[i+1]["AlignedByteOffset"]) \
-                - int(seg_elements[i]["AlignedByteOffset"]))
-    if interleave == True:
-        # Write out the buffers, vertex by vertex.
-        for j in range(len(seg_vb_data[0]["Buffer"])):
-            for i in range(len(seg_elements)):
-                pack_dxgi_vector(vb_stream, seg_vb_data[i]["Buffer"][j], buffer_strides[i], seg_elements[i]["Format"], e)
-    else:
-        # Write out the buffers, element by element.
-        for i in range(len(seg_elements)):
-            for j in range(len(seg_vb_data[0]["Buffer"])):
-                pack_dxgi_vector(vb_stream, seg_vb_data[i]["Buffer"][j], buffer_strides[i], seg_elements[i]["Format"], e)
-    return
+    _write_elements(vb_data, vb_stream, fmt_struct, input_slot, e, interleave)
 
 def write_vb(vb_data, vb_filename, fmt_struct, e = '<', interleave = True):
     if 'stride' in fmt_struct:
